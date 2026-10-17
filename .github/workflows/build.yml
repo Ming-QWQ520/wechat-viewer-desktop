@@ -40,7 +40,7 @@ jobs:
           & $gcc --version
           if ($LASTEXITCODE -ne 0) { throw "gcc not available" }
           $sources = Get-ChildItem "tools\silk\src" -Filter *.c | ForEach-Object { $_.FullName }
-          & $gcc -O2 -w -I tools\silk\interface -I tools\silk\src @sources tools\silk\test\Decoder.c -o tools\silkdec.exe -lm
+          & $gcc -O2 -w -static -I tools\silk\interface -I tools\silk\src @sources tools\silk\test\Decoder.c -o tools\silkdec.exe -lm
           if ($LASTEXITCODE -ne 0) { throw "SILK decoder build failed" }
           Get-Item tools\silkdec.exe | Select-Object Name, Length
 
@@ -78,6 +78,22 @@ jobs:
           Get-ChildItem $out -Filter *.exe | Select-Object Name
           if (-not (Test-Path "$out\tools\wechat-keys.exe")) { Write-Warning "tools\wechat-keys.exe missing" }
           if (-not (Test-Path "$out\tools\silkdec.exe")) { Write-Warning "tools\silkdec.exe missing" }
+
+      - name: Smoke test silkdec (decode a real SILK sample)
+        shell: pwsh
+        run: |
+          # Validates the shipped silkdec.exe end-to-end: static linking + decoder correctness.
+          # A broken exe (e.g. missing mingw runtime DLLs) would fail here instead of on user machines.
+          $exe = "tools\silkdec.exe"
+          $sample = "tools\silk\test\wechat_silk_sample.bin"   # 0x02 + "#!SILK_V3" + 1s of 440Hz @24kHz
+          $pcm = Join-Path $env:TEMP "smoke_voice.pcm"
+          Remove-Item $pcm -ErrorAction SilentlyContinue
+          & $exe $sample $pcm -Fs_API 24000 -quiet | Write-Host
+          if (-not (Test-Path $pcm)) { throw "silkdec produced no PCM" }
+          $len = (Get-Item $pcm).Length
+          Write-Host "silkdec smoke PCM: $len bytes"
+          if ($len -lt 40000) { throw "silkdec PCM too small: $len bytes (expected ~48000 for 1s @24kHz 16-bit)" }
+          Remove-Item $pcm -ErrorAction SilentlyContinue
 
       - name: Smoke test (launch the app and verify it stays alive)
         shell: pwsh

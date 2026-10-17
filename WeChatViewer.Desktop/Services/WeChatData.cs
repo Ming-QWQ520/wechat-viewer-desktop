@@ -34,6 +34,7 @@ public sealed partial class WeChatData : IDisposable
     private readonly Dictionary<string, ContactInfo> _contacts = new();
     private readonly Dictionary<string, Dictionary<long, string>> _name2id = new();
     private readonly Dictionary<string, Dictionary<string, long>> _mediaName2id = new();
+    private string[] _mediaDbRels;
     private readonly Dictionary<string, List<ShardRef>> _msgLocator = new();
     private readonly Dictionary<string, DecodedMedia> _avatarCache = new();
     private readonly Dictionary<string, DecodedMedia> _stickerCache = new();

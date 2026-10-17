@@ -293,31 +293,105 @@ public sealed partial class WeChatData
 
     public byte[] FindVoiceData(string chatUsername, long localId, long? createTime = null)
     {
-        (long Distance, byte[] Data)? best = null;
-        foreach (var rel in new[] { "message/media_0.db", "message/media_1.db" })
+        (long Distance, byte[] Data, string Source)? best = null;
+        foreach (var rel in MediaDbRels())
         {
             if (!File.Exists(Path.Combine(_decDir, rel))) continue;
-            var map = MediaDbNameMap(rel);
-            if (!map.TryGetValue(chatUsername, out var chatNameId)) continue;
-            var db = Db(rel);
-            var rows = Query(db,
-                "select voice_data, create_time from VoiceInfo where chat_name_id = ? and local_id = ? order by create_time desc",
-                chatNameId, localId);
-            foreach (var row in rows)
+            try
             {
-                if (row["voice_data"] is not byte[] data || data.Length == 0) continue;
-                long distance = createTime == null ? 0 : Math.Abs(ToLong(row["create_time"]) - createTime.Value);
-                if (best == null || distance < best.Value.Distance) best = (distance, data);
+                var db = Db(rel);
+                var map = MediaDbNameMap(rel);
+                bool mapped = map.TryGetValue(chatUsername, out var chatNameId);
+                var rows = mapped
+                    ? Query(db,
+                        "select * from VoiceInfo where chat_name_id = ? and local_id = ? order by create_time desc",
+                        chatNameId, localId)
+                    : new List<Dictionary<string, object>>();
+                StartupLogger.Log($"[voice] {rel}: chat={chatUsername} localId={localId} " +
+                                  $"mapped={(mapped ? chatNameId.ToString() : "未映射")} rows={rows.Count}");
+                foreach (var row in ExtractVoiceBlobs(rows))
+                    ConsiderVoiceRow(row, createTime, rel, ref best);
+
+                // Fallback: chat missing from this media db's Name2Id → match by local_id only,
+                // picking the row whose create_time is closest to the message's.
+                if (!mapped)
+                {
+                    var loose = Query(db,
+                        "select * from VoiceInfo where local_id = ? order by create_time desc", localId);
+                    if (loose.Count > 0)
+                        StartupLogger.Log($"[voice] {rel}: Name2Id 未映射，按 local_id 兜底命中 {loose.Count} 行");
+                    foreach (var row in ExtractVoiceBlobs(loose))
+                        ConsiderVoiceRow(row, createTime, rel + "(兜底)", ref best);
+                }
+            }
+            catch (Exception error)
+            {
+                StartupLogger.Log($"[voice] {rel} 查询失败: {error.Message}");
             }
         }
+        if (best != null)
+            StartupLogger.Log($"[voice] 命中 {best.Value.Source}: {best.Value.Data.Length}B (timeDistance={best.Value.Distance})");
         return best?.Data;
+    }
+
+    /// <summary>All decrypted media dbs (media_0.db, media_1.db, …), newest-name first.</summary>
+    private string[] MediaDbRels()
+    {
+        if (_mediaDbRels == null)
+        {
+            try
+            {
+                _mediaDbRels = Directory.EnumerateFiles(Path.Combine(_decDir, "message"), "media_*.db")
+                    .Select(Path.GetFileName)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                    .Select(n => "message/" + n)
+                    .ToArray();
+            }
+            catch
+            {
+                _mediaDbRels = Array.Empty<string>();
+            }
+            if (_mediaDbRels.Length == 0)
+                StartupLogger.Log("[voice] decrypted\\message\\ 下未发现 media_*.db（语音来源数据库缺失）");
+        }
+        return _mediaDbRels;
+    }
+
+    /// <summary>voice_data 优先，为空时兜底尝试 buf 列（部分版本将 SILK 存于 buf）。</summary>
+    private static IEnumerable<Dictionary<string, object>> ExtractVoiceBlobs(List<Dictionary<string, object>> rows)
+    {
+        foreach (var row in rows)
+        {
+            var data = row.TryGetValue("voice_data", out var vd) ? vd as byte[] : null;
+            if (data == null || data.Length == 0)
+                data = row.TryGetValue("buf", out var buf) ? buf as byte[] : null;
+            if (data == null || data.Length == 0) continue;
+            var copy = new Dictionary<string, object>(row);
+            copy["__blob__"] = data;
+            yield return copy;
+        }
+    }
+
+    private static void ConsiderVoiceRow(Dictionary<string, object> row, long? createTime, string source,
+        ref (long Distance, byte[] Data, string Source)? best)
+    {
+        var data = (byte[])row["__blob__"];
+        long rowTime = row.TryGetValue("create_time", out var ct) ? ToLong(ct) : 0;
+        long distance = createTime == null ? 0 : Math.Abs(rowTime - createTime.Value);
+        if (best == null || distance < best.Value.Distance)
+            best = (distance, data, source);
     }
 
     /// <summary>Decode a voice message to WAV (cached on disk), ready for playback.</summary>
     public async Task<string> GetVoiceWavAsync(string chatUsername, VoicePayload voice)
     {
         var silk = FindVoiceData(chatUsername, voice.LocalId, voice.CreateTime);
-        if (silk == null) return null;
+        if (silk == null)
+        {
+            StartupLogger.Log($"[voice] 未找到语音数据 chat={chatUsername} localId={voice.LocalId} " +
+                              $"createTime={voice.CreateTime}（VoiceInfo 无匹配行或 blob 为空）");
+            return null;
+        }
         var cachePath = Path.Combine(_dataDir, "media-cache", "voice",
             Convert.ToHexString(Encoding.UTF8.GetBytes(chatUsername))[..64],
             $"{voice.LocalId}_{voice.CreateTime}.wav");

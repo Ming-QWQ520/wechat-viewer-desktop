@@ -250,6 +250,10 @@
           </InfoBar.ActionButton>
         </InfoBar>
 
+        <!-- voice playback error banner -->
+        <InfoBar x:Name="VoiceErrorBar" Grid.Row="1" IsOpen="False" Severity="Error"
+                 Title="语音播放失败" Margin="12,0,12,8" IsClosable="True"/>
+
         <!-- messages / empty state -->
         <Grid Grid.Row="2">
           <ListView x:Name="MessageList" Padding="18,6,18,14" SelectionMode="None"

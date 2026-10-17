@@ -630,14 +630,19 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     public async Task<string> ResolveVoiceAsync(MessageViewModel vm)
     {
-        if (_data == null || vm?.Message?.Voice == null || _currentChat == null) return null;
+        if (_data == null || vm?.Message?.Voice == null || _currentChat == null)
+        {
+            StartupLogger.Log($"[voice] 播放前置条件不满足: data={_data != null} voice={vm?.Message?.Voice != null} chat={_currentChat}");
+            return null;
+        }
         try
         {
             return await _data.GetVoiceWavAsync(_currentChat, vm.Message.Voice);
         }
-        catch
+        catch (Exception error)
         {
-            return null;
+            StartupLogger.Log($"[voice] 解码异常: {error.Message}");
+            throw;   // 让 VoicePlayerService 感知失败并提示用户
         }
     }
 

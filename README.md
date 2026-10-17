@@ -68,12 +68,12 @@
 
 ### 方式一：下载发行版（推荐）
 
-进入 [Releases](https://github.com/Ming-QWQ520/wechat-viewer-desktop/releases) 页面，下载 **v2.5.0** 中的文件，二选一：
+进入 [Releases](https://github.com/Ming-QWQ520/wechat-viewer-desktop/releases) 页面，下载 **v2.6.0** 中的文件，二选一：
 
 | 文件 | 说明 |
 | --- | --- |
-| `WeChatViewer-Setup-2.5.0-win-x64.exe` | **安装版（推荐）**：双击安装，自动创建开始菜单与桌面快捷方式，控制面板可卸载 |
-| `WeChatViewer.Desktop-2.5.0-win-x64.zip` | **绿色版**：解压后运行 `WeChatViewer.Desktop.exe`，无任何安装过程 |
+| `WeChatViewer-Setup-2.6.0-win-x64.exe` | **安装版（推荐）**：双击安装，自动创建开始菜单与桌面快捷方式，控制面板可卸载 |
+| `WeChatViewer.Desktop-2.6.0-win-x64.zip` | **绿色版**：解压后运行 `WeChatViewer.Desktop.exe`，无任何安装过程 |
 
 > 也可以在本仓库 **Actions → Build Windows Desktop → Artifacts** 下载每次构建的产物。
 
@@ -89,7 +89,7 @@ cd tools\keyextract-src && go build -o ..\wechat-keys.exe . && cd ..
 cd imgcheck-src && go build -o ..\imgcheck.exe . && cd ..\..
 
 :: 2. 编译 SILK 语音解码器（需要 gcc / MSVC）
-gcc -O2 -w -I tools\silk\interface -I tools\silk\src tools\silk\src\*.c tools\silk\test\Decoder.c -o tools\silkdec.exe -lm
+gcc -O2 -w -static -I tools\silk\interface -I tools\silk\src tools\silk\src\*.c tools\silk\test\Decoder.c -o tools\silkdec.exe -lm
 
 :: 3. 发布应用（自包含，免安装运行时）
 dotnet publish WeChatViewer.Desktop\WeChatViewer.Desktop.csproj -c Release -p:Platform=x64 -p:PublishProfile=win-x64
@@ -179,7 +179,7 @@ data\keys.json
 3. `dotnet publish`（自包含 + WindowsAppSDK 自包含，非打包部署）输出到 `bin\publish\win-x64`；
 4. **启动冒烟测试**：在 CI 中直接拉起 exe，30 秒后确认进程存活（能弹出窗口）才算成功，并输出应用启动日志；
 5. Inno Setup 打包安装版 `WeChatViewer-Setup-*.exe` + 绿色版 zip（剔除 pdb 与日志）；
-6. 上传 Artifact 并自动发布到 **Releases**（tag 版本号自动读取自 csproj，当前 `v2.5.0`）。
+6. 上传 Artifact 并自动发布到 **Releases**（tag 版本号自动读取自 csproj，当前 `v2.6.0`）。
 
 ---
 
@@ -214,7 +214,7 @@ data\keys.json
 按顺序排查：
 1. **确认是从压缩包解压后运行的**（不要在压缩软件的预览窗口里直接双击）；
 2. **解除文件锁定**：从浏览器下载的 zip 解压后文件可能被 Windows 标记为不信任。在解压目录打开 PowerShell 执行 `Get-ChildItem -Recurse | Unblock-File`，或右键 exe → 属性 → 勾选「解除锁定」；
-3. **查看启动日志**：程序会在 exe 旁的 `logs\` 目录（不可写时在 `%LOCALAPPDATA%\WeChatViewer.Desktop\logs\`）写入 `app-日期.log`；v2.5.0 起应用内日志面板的全部内容（解密、消息加载、导出等诊断行）也会同步写入该文件，崩溃或功能异常时把日志发给开发者即可；
+3. **查看启动日志**：程序会在 exe 旁的 `logs\` 目录（不可写时在 `%LOCALAPPDATA%\WeChatViewer.Desktop\logs\`）写入 `app-日期.log`；v2.6.0 起应用内日志面板的全部内容（解密、消息加载、导出等诊断行）也会同步写入该文件，崩溃或功能异常时把日志发给开发者即可；
 4. 若 SmartScreen 弹出「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」（应用未做代码签名）。
 
 **提取密钥失败？**  
@@ -222,6 +222,9 @@ data\keys.json
 
 **解密失败：日志里出现「正被另一进程占用」或「解密后的数据库缺失」？**  
 v2.2.0 起已支持在微信运行时以共享模式直读被占用的数据库，正常情况下无需退出微信。若仍失败：微信可能正在备份或校验数据，等几秒再点一次「提取密钥并启动」；或完全退出微信（含托盘）后再点一次。若反复失败，删除 `data\keys.json` 重新提取（keys.json 可能已过期）。
+
+**语音无法播放？**  
+点击语音气泡后若顶部出现红色「语音播放失败」提示条，或完全无反应，请打开 `logs\app-*.log` 并搜索 `[voice]` 行：从 v2.6.0 起，语音链路每一层（media 库扫描、Name2Id 映射、VoiceInfo 行命中、SILK 数据头、silkdec 解码、缓存、播放）都会写入诊断日志，把包含 `[voice]` 的日志发给开发者即可精确定位。常见原因：media 数据库未随密钥提取（删除 keys.json 重扫）、语音为 AMR 格式（日志会明确标注）、CDN 语音未被微信完整下载到本地。
 
 **图片显示 `[图片]`？**  
 确认 `data\keys.json` 里有 `image_aes_key`；在微信中打开任意一张图片后点应用内「重新扫描图片密钥」。

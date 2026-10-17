@@ -383,6 +383,13 @@ public sealed partial class MainWindow : Window
 
     private void WireInteractions()
     {
+        // 语音播放失败 → 顶部 InfoBar 提示（原因可见，避免"点了没反应"）
+        VoicePlayerService.PlaybackFailed += reason => RunOnUi(() =>
+        {
+            VoiceErrorBar.Message = reason;
+            VoiceErrorBar.IsOpen = true;
+        });
+
         MessageInteractions.QuoteRequested += async vm =>
         {
             // 引用块点击要跳到"被引用的原消息"，必须用 refermsg 的 svrid；

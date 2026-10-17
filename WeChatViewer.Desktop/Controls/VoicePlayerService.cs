@@ -45,10 +45,19 @@ public static class VoicePlayerService
     private static DispatcherQueue _dispatcher;
     private static Func<MessageViewModel, Task<string>> _wavResolver;
 
+    /// <summary>语音播放失败 → MainWindow 显示 InfoBar 提示（参数为原因描述）。</summary>
+    public static event Action<string> PlaybackFailed;
+
     public static void Configure(DispatcherQueue dispatcher, Func<MessageViewModel, Task<string>> wavResolver)
     {
         _dispatcher = dispatcher;
         _wavResolver = wavResolver;
+    }
+
+    private static void NotifyFailed(string reason)
+    {
+        StartupLogger.Log($"[voice] 播放失败: {reason}");
+        try { PlaybackFailed?.Invoke(reason); } catch { }
     }
 
     private static MediaPlayer EnsurePlayer()
@@ -61,8 +70,12 @@ public static class VoicePlayerService
                 if (_current != null) SetPlaying(_current, false);
                 _current = null;
             };
-            _player.MediaFailed += (_, _) =>
+            _player.MediaFailed += (_, args) =>
             {
+                var detail = args != null
+                    ? $"{args.Error}/{args.ErrorMessage}/ext=0x{args.ExtendedErrorCode:X8}"
+                    : "unknown";
+                NotifyFailed($"媒体层错误 {detail}");
                 if (_current != null) SetPlaying(_current, false);
                 _current = null;
             };
@@ -101,6 +114,7 @@ public static class VoicePlayerService
             var wavPath = _wavResolver != null ? await _wavResolver(vm) : null;
             if (wavPath == null)
             {
+                NotifyFailed("未能获取语音数据（详见 logs 目录 [voice] 日志）");
                 return;
             }
             byte[] bytes;
@@ -108,8 +122,9 @@ public static class VoicePlayerService
             {
                 bytes = System.IO.File.ReadAllBytes(wavPath);
             }
-            catch
+            catch (Exception error)
             {
+                NotifyFailed($"读取 WAV 失败: {error.Message}");
                 SetPlaying(vm, false);
                 return;
             }
@@ -121,10 +136,12 @@ public static class VoicePlayerService
                 player.Play();
                 _current = vm;
             }
+            StartupLogger.Log($"[voice] 开始播放 {System.IO.Path.GetFileName(wavPath)} ({bytes.Length}B)");
             SetPlaying(vm, true);
         }
-        catch
+        catch (Exception error)
         {
+            NotifyFailed($"{error.GetType().Name}: {error.Message}");
             SetPlaying(vm, false);
         }
     }
