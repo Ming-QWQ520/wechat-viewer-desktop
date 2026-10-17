@@ -226,7 +226,7 @@ public sealed partial class MessageRow : UserControl
             if (source == null) return;
             var currentVm = _vm;
             if (currentVm == null || currentVm.SenderUsername != username) return;
-            image.Source = source;
+            image.Source = source as ImageSource;
             image.Visibility = Visibility.Visible;
             initial.Visibility = Visibility.Collapsed;
         }
@@ -385,7 +385,6 @@ public sealed partial class MessageRow : UserControl
             MaxWidth = 240,
             MaxHeight = 320,
             Stretch = Stretch.Uniform,
-            CornerRadius = new CornerRadius(4),
             HorizontalAlignment = HorizontalAlignment.Left,
         };
         var placeholder = new TextBlock
@@ -397,7 +396,12 @@ public sealed partial class MessageRow : UserControl
         };
         var panel = new Grid { MinWidth = 60 };
         panel.Children.Add(placeholder);
-        panel.Children.Add(image);
+        panel.Children.Add(new Border
+        {
+            CornerRadius = new CornerRadius(4),
+            Child = image,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        });
         image.Tapped += (_, _) =>
         {
             if (image.Source is ImageSource source)
@@ -537,7 +541,6 @@ public sealed partial class MessageRow : UserControl
         var image = new Image
         {
             Stretch = Stretch.UniformToFill,
-            CornerRadius = new CornerRadius(4),
             MaxHeight = 180,
         };
         var placeholder = new Border
@@ -555,7 +558,11 @@ public sealed partial class MessageRow : UserControl
             },
         };
         card.Children.Add(placeholder);
-        card.Children.Add(image);
+        card.Children.Add(new Border
+        {
+            CornerRadius = new CornerRadius(4),
+            Child = image,
+        });
         var badge = new Border
         {
             Background = new SolidColorBrush(new Windows.UI.Color { A = 153, R = 0, G = 0, B = 0 }),
@@ -782,7 +789,7 @@ public sealed partial class MessageRow : UserControl
 
     public static Func<string> _chatResolver;
     public static Func<string, string, byte[]> _imageBytesResolver;
-    public static Func<string, string, string, byte[]> _stickerBytesResolver;
+    public static Func<string, string, byte[]> _stickerBytesResolver;
     public static Func<string, string> _videoThumbResolver;
     public static Func<Message, string> _fileResolver;
     public static Microsoft.UI.Dispatching.DispatcherQueue _dispatcher;

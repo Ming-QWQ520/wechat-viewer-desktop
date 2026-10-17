@@ -100,10 +100,19 @@ public static class VoicePlayerService
             {
                 return;
             }
+            byte[] bytes;
+            try
+            {
+                bytes = System.IO.File.ReadAllBytes(wavPath);
+            }
+            catch
+            {
+                SetPlaying(vm, false);
+                return;
+            }
+            var stream = await UiHelpers.ToRandomAccessStreamAsync(bytes);
             lock (player)
             {
-                var bytes = System.IO.File.ReadAllBytes(wavPath);
-                var stream = new System.IO.MemoryStream(bytes).AsRandomAccessStream();
                 var source = MediaSource.CreateFromStream(stream, "audio/wav");
                 player.Source = source;
                 player.Play();

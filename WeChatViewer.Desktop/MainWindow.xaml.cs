@@ -45,7 +45,8 @@ public sealed partial class MainWindow : Window
         SessionList.ItemsSource = ViewModel.Sessions;
         MessageList.ItemsSource = ViewModel.Messages;
 
-        Loaded += OnLoaded;
+        // Window has no Loaded event; hook the content root instead.
+        ((FrameworkElement)Content).Loaded += OnLoaded;
         _ = InitializeAsync();
     }
 
@@ -394,18 +395,19 @@ public sealed partial class MainWindow : Window
         ViewModel.BusyText = "正在导出…";
         try
         {
+            // Use plain System.IO on file.Path: no WinRT stream interop needed.
+            var targetPath = file.Path;
             if (format == "html")
             {
-                using var stream = await file.OpenStreamForWriteAsync();
-                stream.SetLength(0);
+                await using var stream = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.Read);
                 await ViewModel.ExportHtmlAsync(stream);
             }
             else
             {
                 var content = format == "csv" ? await ViewModel.ExportCsvAsync() : await ViewModel.ExportTxtAsync();
-                await Windows.Storage.FileIO.WriteTextAsync(file, content);
+                await System.IO.File.WriteAllTextAsync(targetPath, content);
             }
-            await ShowDialogAsync("导出完成", $"已导出到：{file.Path}");
+            await ShowDialogAsync("导出完成", $"已导出到：{targetPath}");
         }
         catch (Exception error)
         {

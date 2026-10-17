@@ -66,14 +66,26 @@ public static class UiHelpers
     {
         var text = (name ?? "?").Trim();
         if (text.Length == 0) return "?";
-        return char.IsSurrogateHigh(text[0]) && text.Length > 1 ? text.Substring(0, 2) : text[..1];
+        return char.IsHighSurrogate(text[0]) && text.Length > 1 ? text.Substring(0, 2) : text[..1];
+    }
+
+    /// <summary>Managed bytes → InMemoryRandomAccessStream via DataWriter (no WinRT stream interop needed).</summary>
+    public static async Task<Windows.Storage.Streams.InMemoryRandomAccessStream> ToRandomAccessStreamAsync(byte[] bytes)
+    {
+        var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+        using var writer = new Windows.Storage.Streams.DataWriter(stream);
+        writer.WriteBytes(bytes);
+        await writer.StoreAsync();
+        await writer.FlushAsync();
+        writer.DetachStream();
+        return stream;
     }
 
     public static async Task<BitmapImage> BitmapFromBytesAsync(byte[] bytes)
     {
         if (bytes == null || bytes.Length == 0) return null;
         var bitmap = new BitmapImage();
-        using var stream = new MemoryStream(bytes).AsRandomAccessStream();
+        var stream = await ToRandomAccessStreamAsync(bytes);
         await bitmap.SetSourceAsync(stream);
         return bitmap;
     }
@@ -81,10 +93,7 @@ public static class UiHelpers
     public static async Task<BitmapImage> BitmapFromFileAsync(string path)
     {
         if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
-        var bitmap = new BitmapImage();
-        using var stream = File.OpenRead(path).AsRandomAccessStream();
-        await bitmap.SetSourceAsync(stream);
-        return bitmap;
+        return await BitmapFromBytesAsync(await File.ReadAllBytesAsync(path));
     }
 
     // ----- simple LRU cache for decoded message images -----

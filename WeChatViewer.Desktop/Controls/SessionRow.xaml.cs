@@ -75,7 +75,7 @@ public sealed partial class SessionRow : UserControl
         {
             var source = await resolver(username);
             if (_vm == null || _vm.Username != username || source == null) return;
-            AvatarImage.Source = source;
+            AvatarImage.Source = source as Microsoft.UI.Xaml.Media.ImageSource;
             AvatarImage.Visibility = Visibility.Visible;
             AvatarInitial.Visibility = Visibility.Collapsed;
         }
