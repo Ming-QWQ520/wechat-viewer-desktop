@@ -798,7 +798,7 @@ public sealed partial class MessageRow : UserControl
         Microsoft.UI.Dispatching.DispatcherQueue dispatcher,
         Func<string> chatResolver,
         Func<string, string, byte[]> imageBytesResolver,
-        Func<string, string, string, byte[]> stickerBytesResolver,
+        Func<string, string, byte[]> stickerBytesResolver,
         Func<string, string> videoThumbResolver,
         Func<Message, string> fileResolver)
     {
