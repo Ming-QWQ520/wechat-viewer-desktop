@@ -63,7 +63,7 @@ public sealed partial class MessageRow : UserControl
             if (_bubbleBorder != null && _vm != null)
             {
                 _bubbleBorder.BorderBrush = _vm.IsHighlighted
-                    ? new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 7, 193, 96))
+                    ? new SolidColorBrush(new Windows.UI.Color { A = 255, R = 7, G = 193, B = 96 })
                     : null;
                 _bubbleBorder.BorderThickness = _vm.IsHighlighted ? new Thickness(2) : new Thickness(0);
             }
@@ -544,7 +544,7 @@ public sealed partial class MessageRow : UserControl
         {
             Height = 140,
             CornerRadius = new CornerRadius(4),
-            Background = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 51, 51, 51)),
+            Background = new SolidColorBrush(new Windows.UI.Color { A = 255, R = 51, G = 51, B = 51 }),
             Child = new TextBlock
             {
                 Text = "▶",
@@ -558,7 +558,7 @@ public sealed partial class MessageRow : UserControl
         card.Children.Add(image);
         var badge = new Border
         {
-            Background = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(153, 0, 0, 0)),
+            Background = new SolidColorBrush(new Windows.UI.Color { A = 153, R = 0, G = 0, B = 0 }),
             CornerRadius = new CornerRadius(8),
             Padding = new Thickness(6, 1, 6, 2),
             HorizontalAlignment = HorizontalAlignment.Right,
@@ -740,7 +740,7 @@ public sealed partial class MessageRow : UserControl
             FontSize = 12,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = message.IsSelf
-                ? new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 242, 242, 242))
+                ? new SolidColorBrush(new Windows.UI.Color { A = 255, R = 242, G = 242, B = 242 })
                 : Application.Current.Resources["WxTextBrush"] as Brush,
         });
         var textBlock = new TextBlock
@@ -751,7 +751,7 @@ public sealed partial class MessageRow : UserControl
             MaxLines = 3,
             TextTrimming = TextTrimming.CharacterEllipsis,
             Foreground = message.IsSelf
-                ? new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 242, 242, 242))
+                ? new SolidColorBrush(new Windows.UI.Color { A = 255, R = 242, G = 242, B = 242 })
                 : Application.Current.Resources["WxQuoteTextBrush"] as Brush,
         };
         panel.Children.Add(textBlock);

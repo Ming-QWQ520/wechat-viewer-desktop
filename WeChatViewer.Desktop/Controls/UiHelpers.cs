@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
@@ -12,14 +13,14 @@ namespace WeChatViewer.Desktop.Controls;
 public static class UiHelpers
 {
     /// <summary>Deterministic pastel background for avatar fallbacks (hsl(hash,45%,55%)).</summary>
-    public static Microsoft.UI.Color AvatarColor(string name)
+    public static Windows.UI.Color AvatarColor(string name)
     {
         long hash = 0;
         foreach (var ch in name ?? "") hash = (hash * 31 + ch) % 360;
         return FromHsl((float)hash, 0.45f, 0.55f);
     }
 
-    public static Microsoft.UI.Color FromHsl(float h, float s, float l)
+    public static Windows.UI.Color FromHsl(float h, float s, float l)
     {
         h = ((h % 360f) + 360f) % 360f / 360f;
         double r, g, b;
@@ -35,10 +36,13 @@ public static class UiHelpers
             g = HueToRgb(p, q, h);
             b = HueToRgb(p, q, h - 1.0 / 3.0);
         }
-        return Microsoft.UI.ColorHelper.FromArgb(255,
-            (byte)Math.Clamp((int)Math.Round(r * 255), 0, 255),
-            (byte)Math.Clamp((int)Math.Round(g * 255), 0, 255),
-            (byte)Math.Clamp((int)Math.Round(b * 255), 0, 255));
+        return new Windows.UI.Color
+        {
+            A = 255,
+            R = (byte)Math.Clamp((int)Math.Round(r * 255), 0, 255),
+            G = (byte)Math.Clamp((int)Math.Round(g * 255), 0, 255),
+            B = (byte)Math.Clamp((int)Math.Round(b * 255), 0, 255),
+        };
     }
 
     private static double HueToRgb(double p, double q, double t)
