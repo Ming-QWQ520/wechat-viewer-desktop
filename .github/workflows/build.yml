@@ -88,24 +88,32 @@ jobs:
           Write-Host "Launching $exe ..."
           $p = Start-Process -FilePath $exe -WorkingDirectory $out -PassThru
           Start-Sleep -Seconds 30
-          if ($p.HasExited) {
-            Write-Host "::error::APP EXITED EARLY, exit code = $($p.ExitCode)"
-            if (Test-Path "$out\logs") {
-              Get-ChildItem "$out\logs" -File | ForEach-Object {
-                Write-Host "----- $($_.Name) -----"
-                Get-Content $_.FullName
-              }
-            } else { Write-Host "(no logs written - likely blocked before Main)" }
-            exit 1
-          }
-          Write-Host "App is alive after 30s -> window started OK"
-          try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
+          # dump app log no matter what
           if (Test-Path "$out\logs") {
             Get-ChildItem "$out\logs" -File | ForEach-Object {
               Write-Host "----- $($_.Name) -----"
               Get-Content $_.FullName
             }
+          } else { Write-Host "(no logs written - likely blocked before Main)" }
+          # fail on early exit
+          if ($p.HasExited) {
+            Write-Host "::error::APP EXITED EARLY, exit code = $($p.ExitCode)"
+            exit 1
           }
+          # fail if the startup log contains a fatal marker
+          # (a fatal-error MessageBox keeps the process alive on CI - do not trust liveness alone)
+          $logText = Get-ChildItem "$out\logs" -File -ErrorAction SilentlyContinue |
+            Get-Content -ErrorAction SilentlyContinue | Out-String
+          $markers = @("启动失败", "失败:", "未处理异常", "致命错误", "Exception")
+          foreach ($m in $markers) {
+            if ($logText -match [regex]::Escape($m)) {
+              Write-Host "::error::Startup log contains failure marker: $m"
+              try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
+              exit 1
+            }
+          }
+          Write-Host "App is alive after 30s and log is clean -> window started OK"
+          try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
 
       - name: Build installer (Inno Setup)
         shell: pwsh
@@ -122,7 +130,7 @@ jobs:
           }
           if (-not (Test-Path $iscc)) { throw "ISCC.exe still missing" }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          & $iscc /DAppVersion=2.1.0 /DPublishDir="WeChatViewer.Desktop\bin\publish\win-x64" $iss
+          & $iscc /DAppVersion=2.1.0 /DPublishDir="..\WeChatViewer.Desktop\bin\publish\win-x64" $iss
           if ($LASTEXITCODE -ne 0) { throw "installer build failed" }
           Get-ChildItem dist | Select-Object Name, Length
 

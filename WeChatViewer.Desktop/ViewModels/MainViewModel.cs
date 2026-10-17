@@ -41,7 +41,7 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<SessionViewModel> Sessions { get; }
     public ObservableCollection<MessageViewModel> Messages { get; }
-    public ObservableCollection<string> LogLines { get; }
+    public ObservableCollection<string> LogLines { get; } = new();
 
     public string CurrentChat => _currentChat;
 
