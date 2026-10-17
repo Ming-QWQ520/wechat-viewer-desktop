@@ -29,6 +29,26 @@ internal static class Program
 
             Microsoft.UI.Xaml.Application.Start(_ =>
             {
+                // WinUI 3 does not install a SynchronizationContext on the UI thread by
+                // default. Without it, await continuations resume on thread-pool threads
+                // and any UI access throws COMException 0x8001010E (RPC_E_WRONG_THREAD).
+                // Install the official DispatcherQueueSynchronizationContext here.
+                try
+                {
+                    if (System.Threading.SynchronizationContext.Current == null)
+                    {
+                        var dq = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+                        System.Threading.SynchronizationContext.SetSynchronizationContext(
+                            new Microsoft.UI.Dispatching.DispatcherQueueSynchronizationContext(dq));
+                    }
+                }
+                catch (Exception syncEx)
+                {
+                    StartupLogger.Log("安装 UI SynchronizationContext 失败: " + syncEx);
+                }
+                StartupLogger.Log("UI 线程 SynchronizationContext: " +
+                    (System.Threading.SynchronizationContext.Current?.GetType().FullName ?? "null"));
+
                 StartupLogger.Log("Application.Start: 创建 App 实例");
                 new App();
             });

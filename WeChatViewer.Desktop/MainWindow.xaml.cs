@@ -40,11 +40,11 @@ public sealed partial class MainWindow : Window
         ConfigureResolvers();
 
         LogList.ItemsSource = ViewModel.LogLines;
-        ViewModel.LogLines.CollectionChanged += (_, _) =>
+        ViewModel.LogLines.CollectionChanged += (_, _) => RunOnUi(() =>
         {
             LogScroller.UpdateLayout();
             LogScroller.ChangeView(null, LogScroller.ScrollableHeight, null, true);
-        };
+        });
         SessionList.ItemsSource = ViewModel.Sessions;
         MessageList.ItemsSource = ViewModel.Messages;
 
@@ -65,7 +65,7 @@ public sealed partial class MainWindow : Window
             StartupLogger.Log("数据初始化失败: " + ex);
             ViewModel.LogLines.Add("初始化失败: " + ex.Message);
         }
-        ApplyBootstrapVisibility();
+        RunOnUi(ApplyBootstrapVisibility);
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -77,11 +77,21 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // ---------- ui-thread marshaling ----------
+
+    /// <summary>Runs the action on the UI thread (inline if already there).</summary>
+    private void RunOnUi(Action action)
+    {
+        if (DispatcherQueue.HasThreadAccess) action();
+        else DispatcherQueue.TryEnqueue(() => action());
+    }
+
     // ---------- view model wiring ----------
 
     private void WireViewModel()
     {
-        ViewModel.PropertyChanged += (_, args) =>
+        // VM property changes may fire from worker threads; marshal to UI.
+        ViewModel.PropertyChanged += (_, args) => RunOnUi(() =>
         {
             switch (args.PropertyName)
             {
@@ -122,7 +132,7 @@ public sealed partial class MainWindow : Window
                     StickerButton.IsEnabled = !ViewModel.StickerTaskRunning;
                     break;
             }
-        };
+        });
     }
 
     private void ApplyBootstrapVisibility()
@@ -184,8 +194,11 @@ public sealed partial class MainWindow : Window
             var target = await ViewModel.JumpToQuoteAsync(vm.ServerId);
             if (target == null) return;
             await Task.Delay(150);
-            MessageList.UpdateLayout();
-            MessageList.ScrollIntoView(target, ScrollIntoViewAlignment.Leading);
+            RunOnUi(() =>
+            {
+                MessageList.UpdateLayout();
+                MessageList.ScrollIntoView(target, ScrollIntoViewAlignment.Leading);
+            });
             await Task.Delay(150);
             target.IsHighlighted = true;
             _highlightTimer?.Stop();
@@ -245,12 +258,15 @@ public sealed partial class MainWindow : Window
             double extentBefore = _messagesScroll.ExtentHeight;
             double offsetBefore = _messagesScroll.VerticalOffset;
             await ViewModel.LoadOlderAsync();
-            MessageList.UpdateLayout();
-            double delta = _messagesScroll.ExtentHeight - extentBefore;
-            if (delta > 0)
+            RunOnUi(() =>
             {
-                _messagesScroll.ChangeView(null, offsetBefore + delta, null, true);
-            }
+                MessageList.UpdateLayout();
+                double delta = _messagesScroll.ExtentHeight - extentBefore;
+                if (delta > 0)
+                {
+                    _messagesScroll.ChangeView(null, offsetBefore + delta, null, true);
+                }
+            });
         }
         finally
         {
@@ -280,10 +296,13 @@ public sealed partial class MainWindow : Window
         EmptyState.Visibility = Visibility.Collapsed;
         ChatHeader.Visibility = Visibility.Visible;
         await ViewModel.SelectSessionAsync(session);
-        if (!ViewModel.SearchResultsShown)
+        RunOnUi(() =>
         {
-            ScrollToBottom();
-        }
+            if (!ViewModel.SearchResultsShown)
+            {
+                ScrollToBottom();
+            }
+        });
     }
 
     // ---------- search ----------
@@ -320,7 +339,7 @@ public sealed partial class MainWindow : Window
         ChatSearchBox.Text = "";
         ChatSearchKind.SelectedIndex = 0;
         await ViewModel.ClearSearchAsync();
-        ScrollToBottom();
+        RunOnUi(ScrollToBottom);
     }
 
     private async void OnBackToLatest(object sender, RoutedEventArgs e)
@@ -328,40 +347,40 @@ public sealed partial class MainWindow : Window
         ChatSearchBox.Text = "";
         ChatSearchKind.SelectedIndex = 0;
         await ViewModel.ClearSearchAsync();
-        ScrollToBottom();
+        RunOnUi(ScrollToBottom);
     }
 
     // ---------- bootstrap ----------
 
     private async void OnExtractKeys(object sender, RoutedEventArgs e)
     {
-        ExtractButton.IsEnabled = false;
+        RunOnUi(() => ExtractButton.IsEnabled = false);
         try
         {
             if (await ViewModel.ExtractKeysAsync())
             {
-                InitStatusText.Text = "正在解密数据库并加载…";
+                RunOnUi(() => InitStatusText.Text = "正在解密数据库并加载…");
                 await ViewModel.RunInitPipelineAsync();
-                ApplyBootstrapVisibility();
+                RunOnUi(ApplyBootstrapVisibility);
             }
         }
         finally
         {
-            ExtractButton.IsEnabled = !ViewModel.Busy;
+            RunOnUi(() => ExtractButton.IsEnabled = !ViewModel.Busy);
         }
     }
 
     private async void OnRescanKeys(object sender, RoutedEventArgs e)
     {
-        RescanKeysButton.IsEnabled = false;
+        RunOnUi(() => RescanKeysButton.IsEnabled = false);
         try
         {
             await ViewModel.RefreshKeysAsync();
-            ImageKeyBar.IsOpen = ViewModel.HasData && !ViewModel.HasImageKey;
+            RunOnUi(() => ImageKeyBar.IsOpen = ViewModel.HasData && !ViewModel.HasImageKey);
         }
         finally
         {
-            RescanKeysButton.IsEnabled = true;
+            RunOnUi(() => RescanKeysButton.IsEnabled = true);
         }
     }
 
@@ -370,10 +389,13 @@ public sealed partial class MainWindow : Window
     private async void OnCompleteStickers(object sender, RoutedEventArgs e)
     {
         await ViewModel.CompleteStickersAsync();
-        ChatSearchBox.Text = "";
-        ChatSearchKind.SelectedIndex = 0;
+        RunOnUi(() =>
+        {
+            ChatSearchBox.Text = "";
+            ChatSearchKind.SelectedIndex = 0;
+        });
         await ViewModel.ClearSearchAsync();
-        ScrollToBottom();
+        RunOnUi(ScrollToBottom);
     }
 
     // ---------- export ----------
@@ -432,23 +454,31 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task ShowDialogAsync(string title, string message)
+    private Task ShowDialogAsync(string title, string message)
     {
-        try
+        // ContentDialog must be created and shown on the UI thread.
+        var tcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+        RunOnUi(async () =>
         {
-            var dialog = new ContentDialog
+            try
             {
-                Title = title,
-                Content = message,
-                CloseButtonText = "确定",
-                XamlRoot = Content.XamlRoot,
-            };
-            await dialog.ShowAsync();
-        }
-        catch
-        {
-            // dialog may fail during shutdown; ignore
-        }
+                var dialog = new ContentDialog
+                {
+                    Title = title,
+                    Content = message,
+                    CloseButtonText = "确定",
+                    XamlRoot = Content.XamlRoot,
+                };
+                await dialog.ShowAsync();
+                tcs.TrySetResult(null);
+            }
+            catch
+            {
+                // dialog may fail during shutdown; ignore
+                tcs.TrySetResult(null);
+            }
+        });
+        return tcs.Task;
     }
 
     // ---------- lightbox ----------
