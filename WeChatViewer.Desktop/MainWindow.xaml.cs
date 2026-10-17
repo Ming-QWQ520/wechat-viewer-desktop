@@ -310,7 +310,11 @@ public sealed partial class MainWindow : Window
             SuggestedStartLocation = PickerLocationId.PicturesLibrary,
             ViewMode = PickerViewMode.Thumbnail,
         };
-        picker.FileTypeChoices.Add("图片", new List<string> { ".png", ".jpg", ".jpeg", ".bmp", ".webp" });
+        picker.FileTypeFilter.Add(".png");
+        picker.FileTypeFilter.Add(".jpg");
+        picker.FileTypeFilter.Add(".jpeg");
+        picker.FileTypeFilter.Add(".bmp");
+        picker.FileTypeFilter.Add(".webp");
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
         var file = await picker.PickSingleFileAsync();
