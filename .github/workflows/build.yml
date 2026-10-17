@@ -1,0 +1,93 @@
+name: Build Windows Desktop
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build Go helper tools (key extractor / image checker)
+        run: |
+          Push-Location tools/keyextract-src
+          go build -trimpath -o ..\wechat-keys.exe .
+          Pop-Location
+          Push-Location tools/imgcheck-src
+          go build -trimpath -o ..\imgcheck.exe .
+          Pop-Location
+
+      - name: Build SILK voice decoder (mingw gcc)
+        shell: pwsh
+        run: |
+          $gcc = (Get-Command gcc -ErrorAction SilentlyContinue).Source
+          if (-not $gcc) { $gcc = "C:\msys64\mingw64\bin\gcc.exe" }
+          Write-Host "using gcc: $gcc"
+          & $gcc --version
+          if ($LASTEXITCODE -ne 0) { throw "gcc not available" }
+          $sources = Get-ChildItem "tools\silk\src" -Filter *.c | ForEach-Object { $_.FullName }
+          & $gcc -O2 -w -I tools\silk\interface -I tools\silk\src @sources tools\silk\test\Decoder.c -o tools\silkdec.exe -lm
+          if ($LASTEXITCODE -ne 0) { throw "SILK decoder build failed" }
+          Get-Item tools\silkdec.exe | Select-Object Name, Length
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore WeChatViewer.Desktop\WeChatViewer.Desktop.csproj -p:Platform=x64
+
+      - name: Publish (self-contained, unpackaged)
+        run: >
+          dotnet publish WeChatViewer.Desktop\WeChatViewer.Desktop.csproj
+          -c Release
+          -p:Platform=x64
+          -p:PublishProfile=win-x64
+          -p:WindowsAppSDKSelfContained=true
+          -p:SelfContained=true
+
+      - name: Verify output
+        shell: pwsh
+        run: |
+          $out = "WeChatViewer.Desktop\bin\publish\win-x64"
+          if (-not (Test-Path $out)) {
+            Write-Host "Publish dir not found, searching..."
+            $exe = Get-ChildItem -Recurse -Filter "WeChatViewer.Desktop.exe" | Select-Object -First 1
+            if (-not $exe) { throw "build output missing" }
+            $out = $exe.DirectoryName
+            Write-Host "Found output at $out"
+          }
+          Write-Host "Output: $out"
+          Get-ChildItem $out -Filter *.exe | Select-Object Name
+          if (-not (Test-Path "$out\tools\wechat-keys.exe")) { Write-Warning "tools\wechat-keys.exe missing" }
+          if (-not (Test-Path "$out\tools\silkdec.exe")) { Write-Warning "tools\silkdec.exe missing" }
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          $out = "WeChatViewer.Desktop\bin\publish\win-x64"
+          if (-not (Test-Path $out)) {
+            $exe = Get-ChildItem -Recurse -Filter "WeChatViewer.Desktop.exe" | Select-Object -First 1
+            $out = $exe.DirectoryName
+          }
+          Compress-Archive -Path "$out\*" -DestinationPath "WeChatViewer.Desktop-win-x64.zip" -Force
+          Get-Item WeChatViewer.Desktop-win-x64.zip | Select-Object Name, @{n='SizeMB';e={[math]::Round($_.Length/1MB,1)}}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WeChatViewer.Desktop-win-x64
+          path: WeChatViewer.Desktop-win-x64.zip
+          if-no-files-found: error

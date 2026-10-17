@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="WeChatViewer.Desktop.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:WeChatViewer.Desktop"
+    xmlns:controls="using:WeChatViewer.Desktop.Controls"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+  <Grid x:Name="RootGrid" KeyboardAcceleratorPlacementMode="Hidden">
+    <Grid.KeyboardAccelerators>
+      <KeyboardAccelerator Key="Escape" Invoked="OnEscapeInvoked"/>
+    </Grid.KeyboardAccelerators>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <!-- ======== custom title bar ======== -->
+    <Grid x:Name="AppTitleBar" Height="44">
+      <StackPanel Orientation="Horizontal" Spacing="10" Margin="14,0,0,0" VerticalAlignment="Center">
+        <Image Source="Assets/icon.png" Width="18" Height="18" HorizontalAlignment="Left"/>
+        <TextBlock Text="微信聊天记录查看器" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        <TextBlock Text="WinUI 3 桌面版" FontSize="11" Opacity="0.55" VerticalAlignment="Center"/>
+      </StackPanel>
+    </Grid>
+
+    <!-- ======== body ======== -->
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="320"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <!-- sidebar -->
+      <Border Grid.Column="0" Background="{ThemeResource WxSidebarBrush}"
+              BorderBrush="{ThemeResource WxLineBrush}" BorderThickness="0,0,1,0">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <TextBox x:Name="SessionSearchBox" Margin="12,2,12,10" PlaceholderText="搜索会话 / 联系人"
+                   TextChanged="OnSessionSearchChanged"/>
+          <ListView x:Name="SessionList" Grid.Row="1" SelectionMode="Single"
+                    SelectionChanged="OnSessionSelected" IsTabStop="True">
+            <ListView.ItemTemplate>
+              <DataTemplate>
+                <controls:SessionRow/>
+              </DataTemplate>
+            </ListView.ItemTemplate>
+            <ListView.ItemContainerStyle>
+              <Style TargetType="ListViewItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Margin" Value="4,1"/>
+                <Setter Property="MinHeight" Value="0"/>
+                <Setter Property="CornerRadius" Value="8"/>
+              </Style>
+            </ListView.ItemContainerStyle>
+          </ListView>
+          <TextBlock Grid.Row="2" x:Name="AccountLineText" Margin="14,8,14,10" FontSize="11"
+                     Foreground="{ThemeResource WxMutedBrush}" Text="读取中…"/>
+        </Grid>
+      </Border>
+
+      <!-- main column -->
+      <Grid Grid.Column="1" Background="{ThemeResource WxMainBrush}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- chat header -->
+        <StackPanel x:Name="ChatHeader" Spacing="8" Margin="18,4,18,8" Visibility="Collapsed">
+          <Grid ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="2">
+              <TextBlock x:Name="ChatTitleText" FontSize="17" FontWeight="SemiBold"/>
+              <TextBlock x:Name="ChatSubtitleText" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+              <Button x:Name="StickerButton" Click="OnCompleteStickers">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8F4;" FontSize="14"/>
+                  <TextBlock x:Name="StickerButtonText" Text="补全表情包" FontSize="12"/>
+                </StackPanel>
+              </Button>
+              <DropDownButton x:Name="ExportButton">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE898;" FontSize="14"/>
+                  <TextBlock Text="导出" FontSize="12"/>
+                </StackPanel>
+                <DropDownButton.Flyout>
+                  <MenuFlyout>
+                    <MenuFlyoutItem Text="导出 HTML（微信气泡样式）" Click="OnExportHtml">
+                      <MenuFlyoutItem.Icon>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A5;"/>
+                      </MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutItem Text="导出 TXT" Click="OnExportTxt">
+                      <MenuFlyoutItem.Icon>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A5;"/>
+                      </MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutItem Text="导出 CSV" Click="OnExportCsv">
+                      <MenuFlyoutItem.Icon>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A5;"/>
+                      </MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                  </MenuFlyout>
+                </DropDownButton.Flyout>
+              </DropDownButton>
+            </StackPanel>
+          </Grid>
+          <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="ChatSearchBox" PlaceholderText="搜索聊天记录（回车查找）" KeyDown="OnChatSearchKeyDown"/>
+            <ComboBox x:Name="ChatSearchKind" Grid.Column="1" MinWidth="110" SelectedIndex="0" SelectionChanged="OnChatSearchKindChanged">
+              <ComboBoxItem Content="全部类型" Tag=""/>
+              <ComboBoxItem Content="文字" Tag="text"/>
+              <ComboBoxItem Content="图片" Tag="image"/>
+              <ComboBoxItem Content="语音" Tag="voice"/>
+              <ComboBoxItem Content="视频" Tag="video"/>
+              <ComboBoxItem Content="文件" Tag="file"/>
+              <ComboBoxItem Content="表情" Tag="sticker"/>
+              <ComboBoxItem Content="链接" Tag="link"/>
+              <ComboBoxItem Content="引用" Tag="quote"/>
+              <ComboBoxItem Content="聊天记录" Tag="chatRecord"/>
+              <ComboBoxItem Content="拍一拍" Tag="pat"/>
+              <ComboBoxItem Content="系统" Tag="system"/>
+            </ComboBox>
+            <Button x:Name="ChatSearchButton" Grid.Column="2" Click="OnRunSearch">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE721;" FontSize="14"/>
+                <TextBlock Text="查找" FontSize="12"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="BackToChatButton" Grid.Column="3" Visibility="Collapsed" Click="OnBackToChat">
+              <TextBlock Text="返回聊天" FontSize="12"/>
+            </Button>
+            <Button x:Name="BackToLatestButton" Grid.Column="4" Visibility="Collapsed" Click="OnBackToLatest">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE74A;" FontSize="14"/>
+                <TextBlock Text="返回最新" FontSize="12"/>
+              </StackPanel>
+            </Button>
+            <TextBlock Grid.Column="0" Grid.ColumnSpan="5" x:Name="SearchStatusText" FontSize="12"
+                       Foreground="{ThemeResource WxMutedBrush}" HorizontalAlignment="Right"
+                       VerticalAlignment="Center" Margin="0,0,2,0" TextWrapping="NoWrap"/>
+          </Grid>
+        </StackPanel>
+
+        <!-- image key banner -->
+        <InfoBar x:Name="ImageKeyBar" Grid.Row="1" IsOpen="False" Severity="Warning"
+                 Title="缺少图片密钥" Margin="12,0,12,8"
+                 Message="部分图片为微信 V2 加密格式：请先在微信中打开任意一张图片，然后重新扫描密钥。"
+                 IsClosable="True">
+          <InfoBar.ActionButton>
+            <Button x:Name="RescanKeysButton" Content="重新扫描图片密钥" Click="OnRescanKeys" FontSize="12"/>
+          </InfoBar.ActionButton>
+        </InfoBar>
+
+        <!-- messages / empty state -->
+        <Grid Grid.Row="2">
+          <ListView x:Name="MessageList" Padding="18,6,18,14" SelectionMode="None"
+                    ScrollViewer.HorizontalScrollMode="Disabled">
+            <ListView.ItemTemplate>
+              <DataTemplate>
+                <controls:MessageRow/>
+              </DataTemplate>
+            </ListView.ItemTemplate>
+            <ListView.ItemContainerStyle>
+              <Style TargetType="ListViewItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Margin" Value="0"/>
+                <Setter Property="MinHeight" Value="0"/>
+                <Setter Property="IsTabStop" Value="False"/>
+              </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemsPanel>
+              <ItemsPanelTemplate>
+                <ItemsStackPanel/>
+              </ItemsPanelTemplate>
+            </ListView.ItemsPanel>
+          </ListView>
+
+          <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center"
+                      Spacing="10" Visibility="Visible">
+            <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8BD;" FontSize="40"
+                      Foreground="{ThemeResource WxMutedBrush}" HorizontalAlignment="Center"/>
+            <TextBlock Text="选择左侧会话查看聊天记录" Foreground="{ThemeResource WxMutedBrush}" FontSize="14"
+                       HorizontalAlignment="Center"/>
+          </StackPanel>
+        </Grid>
+
+        <!-- footer -->
+        <Border Grid.Row="3" Background="{ThemeResource WxHeaderBrush}"
+                BorderBrush="{ThemeResource WxLineBrush}" BorderThickness="0,1,0,0">
+          <TextBlock Text="只读查看器 · 数据来自本机微信数据库 · 请勿分享解密数据" FontSize="11"
+                     Foreground="{ThemeResource WxMutedBrush}" HorizontalAlignment="Center"
+                     Padding="0,8"/>
+        </Border>
+      </Grid>
+
+      <!-- ======== bootstrap overlay ======== -->
+      <Border x:Name="BootstrapPanel" Grid.ColumnSpan="2" Background="{ThemeResource WxMainBrush}"
+              Visibility="Collapsed">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel MaxWidth="560" Margin="24,40,24,24" Spacing="14" HorizontalAlignment="Center">
+            <Image Source="Assets/icon.png" Width="64" Height="64" HorizontalAlignment="Center"/>
+            <TextBlock Text="欢迎使用微信聊天记录查看器" FontSize="20" FontWeight="SemiBold"
+                       HorizontalAlignment="Center"/>
+            <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource WxNameBrush}" FontSize="13"
+                       HorizontalAlignment="Center" TextAlignment="Center"
+                       Text="本工具只读访问本机微信 4.x 的加密数据库，全程本地运行、不上传任何数据。首次使用需要从运行中的微信进程提取数据库密钥。"/>
+            <Border Background="{ThemeResource WxBubbleInBrush}" CornerRadius="10" Padding="16,12">
+              <StackPanel Spacing="6">
+                <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource WxTextBrush}"
+                           Text="1. 确认微信 4.x 已启动并保持登录状态&#x0a;2. 点击下方按钮，从 Weixin.exe 进程内存提取密钥（约 5-60 秒）&#x0a;3. 工具会自动解密数据库并加载会话列表"/>
+              </StackPanel>
+            </Border>
+            <Button x:Name="ExtractButton" HorizontalAlignment="Center" Style="{StaticResource AccentButtonStyle}"
+                    Click="OnExtractKeys" IsEnabled="{x:Bind ViewModel.NotBusy, Mode=OneWay}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE192;" FontSize="15"/>
+                <TextBlock x:Name="ExtractButtonText" Text="提取密钥并启动"/>
+              </StackPanel>
+            </Button>
+            <ProgressRing x:Name="BootstrapRing" IsActive="True" IsIndeterminate="True"
+                          Width="28" Height="28" HorizontalAlignment="Center"/>
+            <TextBlock x:Name="InitStatusText" FontSize="12" Foreground="{ThemeResource WxAccentBrush}"
+                       HorizontalAlignment="Center" Text=""/>
+            <Border Background="{ThemeResource WxBubbleInBrush}" CornerRadius="10" Padding="12,8"
+                    MaxHeight="220">
+              <ScrollViewer x:Name="LogScroller" VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="LogList" FontFamily="Consolas">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding}" FontSize="11" TextWrapping="Wrap"
+                                 Foreground="{ThemeResource WxMutedBrush}" IsTextSelectionEnabled="True"/>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+
+      <!-- ======== busy overlay ======== -->
+      <Grid x:Name="BusyOverlay" Grid.ColumnSpan="2" Visibility="Collapsed" Background="#44000000">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
+          <ProgressRing IsActive="True" IsIndeterminate="True" Width="44" Height="44"/>
+          <TextBlock x:Name="BusyTextBlock" Text="" FontSize="13" HorizontalAlignment="Center"/>
+        </StackPanel>
+      </Grid>
+    </Grid>
+
+    <!-- ======== lightbox ======== -->
+    <Grid x:Name="Lightbox" Grid.RowSpan="2" Visibility="Collapsed" Background="#D9000000"
+          Tapped="OnLightboxTapped">
+      <Image x:Name="LightboxImage" MaxWidth="1200" MaxHeight="900" Stretch="Uniform"
+             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+      <TextBlock Text="点击任意位置或按 Esc 关闭" FontSize="12" Foreground="#B3FFFFFF"
+                 HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18"/>
+    </Grid>
+  </Grid>
+</Window>

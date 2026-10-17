@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="WeChatViewer.Desktop.Controls.SessionRow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+  <Grid x:Name="Root" Height="62" Padding="10,4">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="Auto"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+
+    <Border x:Name="AvatarBorder" Width="42" Height="42" CornerRadius="8" VerticalAlignment="Center">
+      <Grid>
+        <TextBlock x:Name="AvatarInitial" Foreground="White" FontSize="17" FontWeight="SemiBold"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        <Image x:Name="AvatarImage" Stretch="UniformToFill"/>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center" RowSpacing="5">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Orientation="Horizontal" Spacing="5">
+          <TextBlock x:Name="NameText" FontSize="14" FontWeight="SemiBold" MaxLines="1"
+                     TextTrimming="CharacterEllipsis"/>
+          <TextBlock x:Name="GroupTag" FontSize="10" Foreground="{ThemeResource WxMutedBrush}"
+                     VerticalAlignment="Center"/>
+        </StackPanel>
+        <TextBlock Grid.Column="1" x:Name="TimeText" FontSize="11"
+                   Foreground="{ThemeResource WxMutedBrush}" VerticalAlignment="Center"/>
+      </Grid>
+      <Grid Grid.Row="1">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="SummaryText" FontSize="12" Foreground="{ThemeResource WxSummaryBrush}"
+                   MaxLines="1" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+        <Border Grid.Column="1" x:Name="UnreadBadge" CornerRadius="9" MinWidth="18" Height="18"
+                Background="#FA5151" Visibility="Collapsed" Padding="5,0" VerticalAlignment="Center">
+          <TextBlock x:Name="UnreadText" FontSize="11" Foreground="White"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Border>
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -1,0 +1,44 @@
+# Build outputs
+bin/
+obj/
+publish/
+*.zip
+
+# User-specific files
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+
+# .NET build artifacts
+project.lock.json
+*.nuget.props
+*.nuget.targets
+artifacts/
+
+# Windows App SDK / MSIX packaging output
+AppPackages/
+BundleArtifacts/
+Package.StoreAssociation.xml
+*_i.appxupload
+*.appxbundle
+*.appx
+*.msix
+*.msixupload
+
+# Runtime data (sensitive!) — decrypted databases, keys, media cache
+data/
+tools/*.exe
+!tools/keyextract-src/**
+!tools/imgcheck-src/**
+!tools/silk/**
+
+# Go
+tools/keyextract-src/keyextract-src
+tools/imgcheck-src/imgcheck-src
+
+# Logs & temp
+*.log
+*.tmp
+.tmp/
