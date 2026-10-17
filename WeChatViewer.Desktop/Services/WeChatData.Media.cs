@@ -512,14 +512,20 @@ public sealed partial class WeChatData
     private static bool IsStickerCdnHost(string hostname)
     {
         var host = (hostname ?? "").ToLowerInvariant();
-        return host == "vweixinf.tc.qq.com" || host.EndsWith(".tc.qq.com") || host.EndsWith(".qpic.cn");
+        // 腾讯系 CDN 全域放行：tc.qq.com / qpic.cn / gtimg 系列 / qlogo.cn 等，
+        // 微信 4.x 表情 cdnurl 可能落在 mmbiz.qpic.cn、vweixinf.tc.qq.com、giffix.gtimg.cn 等多个域。
+        return host.EndsWith(".qq.com") || host == "qq.com"
+            || host.EndsWith(".qpic.cn") || host == "qpic.cn"
+            || host.EndsWith(".gtimg.com") || host.EndsWith(".gtimg.cn")
+            || host.EndsWith(".qlogo.cn") || host == "qlogo.cn";
     }
 
     /// <summary>
     /// Download a sticker that WeChat never cached locally from the CDN URL recorded
     /// in the message. Only Tencent CDN hosts are accepted; MD5 must match.
+    /// encrypturl 加密变体在下载后用 aeskey 做 AES-128-CBC 解密（key=IV 与首块 IV 两种方案都尝试）。
     /// </summary>
-    public async Task<DecodedMedia> DownloadStickerAsync(string md5Hex, string url)
+    public async Task<DecodedMedia> DownloadStickerAsync(string md5Hex, string url, string aesKeyHex = null)
     {
         var key = (md5Hex ?? "").ToLowerInvariant();
         if (!Regex.IsMatch(key, "^[0-9a-f]{32}$") || string.IsNullOrEmpty(url)) return null;
@@ -548,9 +554,9 @@ public sealed partial class WeChatData
             }
             var buffer = await response.Content.ReadAsByteArrayAsync(cts.Token);
             if (buffer.Length == 0 || buffer.Length > 10 * 1024 * 1024) return null;
-            if (TextUtils.Md5Hex(buffer) != key) return null;
-            if (!ImageDecoder.IsDisplayableImage(buffer)) return null;
-            var ext = buffer[0] switch
+            var decoded = DecodeDownloadedSticker(buffer, key, aesKeyHex);
+            if (decoded == null) return null;
+            var ext = decoded[0] switch
             {
                 0x89 => "png",
                 0x47 => "gif",
@@ -559,11 +565,11 @@ public sealed partial class WeChatData
             };
             var file = Path.Combine(_stickerDownloadDir, key[..2], $"{key}.{ext}");
             Directory.CreateDirectory(Path.GetDirectoryName(file));
-            await File.WriteAllBytesAsync(file, buffer);
+            await File.WriteAllBytesAsync(file, decoded);
             var result = new DecodedMedia
             {
-                Buffer = buffer,
-                ContentType = ImageDecoder.ImageContentType(buffer),
+                Buffer = decoded,
+                ContentType = ImageDecoder.ImageContentType(decoded),
                 File = file,
             };
             _stickerCache[key] = result;
@@ -573,6 +579,27 @@ public sealed partial class WeChatData
         {
             return null;
         }
+    }
+
+    /// <summary>明文直接通过 MD5 校验；否则尝试 aeskey 解密变体，再验 MD5。</summary>
+    private static byte[] DecodeDownloadedSticker(byte[] buffer, string md5Hex, string aesKeyHex)
+    {
+        if (TextUtils.Md5Hex(buffer) == md5Hex && ImageDecoder.IsDisplayableImage(buffer)) return buffer;
+        if (string.IsNullOrEmpty(aesKeyHex) || aesKeyHex.Length != 32) return null;
+        if (!System.Text.RegularExpressions.Regex.IsMatch(aesKeyHex, "^[0-9a-fA-F]{32}$")) return null;
+        var keyBytes = Convert.FromHexString(aesKeyHex);
+        // 方案 1：key = IV（与本地表情文件一致的方案）
+        var plain = ImageDecoder.DecodeEmoticonFile(buffer, keyBytes);
+        if (plain != null && TextUtils.Md5Hex(plain) == md5Hex) return plain;
+        // 方案 2：IV 取密文首 16 字节
+        if (buffer.Length > 16)
+        {
+            var rest = new byte[buffer.Length - 16];
+            Array.Copy(buffer, 16, rest, 0, rest.Length);
+            var ivPrefixed = ImageDecoder.AesCbcDecrypt(rest, keyBytes, buffer.AsSpan(0, 16).ToArray());
+            if (ivPrefixed != null && TextUtils.Md5Hex(ivPrefixed) == md5Hex) return ivPrefixed;
+        }
+        return null;
     }
 
     /// <summary>120px PNG thumbnail for exports, generated on demand (System.Drawing).</summary>

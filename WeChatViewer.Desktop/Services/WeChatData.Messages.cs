@@ -268,7 +268,7 @@ public sealed partial class WeChatData
         {
             case 1:
                 message.Kind = "text";
-                message.Text = TextUtils.NormalizeText(content);
+                message.Text = TextUtils.NormalizeText(TextUtils.InlineEmoteToAlt(content));
                 break;
             case 3:
             {
@@ -320,6 +320,8 @@ public sealed partial class WeChatData
                     ThumbMd5 = TextUtils.GetAttr(content, "cdnthumbmd5") ?? "",
                     Length = ToLong(ParseLongOrNull(TextUtils.GetAttr(content, "len"))),
                     CdnUrl = TextUtils.HtmlUnescape(TextUtils.GetAttr(content, "cdnurl") ?? ""),
+                    AesKey = TextUtils.GetAttr(content, "aeskey") ?? "",
+                    EncryptUrl = TextUtils.HtmlUnescape(TextUtils.GetAttr(content, "encrypturl") ?? ""),
                 };
                 break;
             case 48:

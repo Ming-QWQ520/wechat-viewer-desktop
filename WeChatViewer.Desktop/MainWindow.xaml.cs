@@ -5,8 +5,10 @@ using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using WeChatViewer.Desktop.Controls;
 using WeChatViewer.Desktop.Services;
 using WeChatViewer.Desktop.ViewModels;
@@ -22,6 +24,9 @@ public sealed partial class MainWindow : Window
     private ScrollViewer _messagesScroll;
     private bool _loadingOlder;
     private DispatcherQueueTimer _highlightTimer;
+    private AppearanceSettings _appearance;
+    private bool _suppressAppearanceEvents;
+    private int _lastBlur = -1, _lastDim = -1, _lastPanel = -1;
 
     public MainWindow()
     {
@@ -33,11 +38,11 @@ public sealed partial class MainWindow : Window
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        SystemBackdrop = new MicaBackdrop();
 
         WireViewModel();
         WireInteractions();
         ConfigureResolvers();
+        InitAppearance();
 
         LogList.ItemsSource = ViewModel.LogLines;
         ViewModel.LogLines.CollectionChanged += (_, _) => RunOnUi(() =>
@@ -182,22 +187,168 @@ public sealed partial class MainWindow : Window
             DispatcherQueue,
             () => ViewModel.CurrentChat,
             (chat, localName) => ViewModel.ResolveImageBytes(chat, localName),
-            (md5, cdnUrl) => ViewModel.ResolveStickerBytes(md5, cdnUrl),
+            message => ViewModel.ResolveStickerBytes(message),
             localName => ViewModel.ResolveVideoThumb(localName),
             message => ViewModel.ResolveFile(message.File?.Name));
+    }
+
+    // ---------- appearance (透明窗口 / 液态玻璃 / 自定义背景) ----------
+
+    private void InitAppearance()
+    {
+        _appearance = AppearanceService.Load();
+        _suppressAppearanceEvents = true;
+        var modeIndex = _appearance.Mode switch { "mica" => 0, "image" => 2, _ => 1 };
+        if (BackdropMode.Items.Count > modeIndex) BackdropMode.SelectedIndex = modeIndex;
+        BlurSlider.Value = _appearance.Blur;
+        DimSlider.Value = _appearance.Dim;
+        PanelSlider.Value = _appearance.PanelOpacity;
+        _suppressAppearanceEvents = false;
+        AppearanceFlyout.Opening += (_, _) => SyncAppearanceControls();
+        _ = ApplyAppearanceAsync(refreshLists: false);
+    }
+
+    private void SyncAppearanceControls()
+    {
+        _suppressAppearanceEvents = true;
+        var modeIndex = _appearance.Mode switch { "mica" => 0, "image" => 2, _ => 1 };
+        if (BackdropMode.Items.Count > modeIndex) BackdropMode.SelectedIndex = modeIndex;
+        BlurSlider.Value = _appearance.Blur;
+        DimSlider.Value = _appearance.Dim;
+        PanelSlider.Value = _appearance.PanelOpacity;
+        _suppressAppearanceEvents = false;
+        ImageOptions.Visibility = _appearance.Mode == "image" ? Visibility.Visible : Visibility.Collapsed;
+        PickBackgroundText.Text = string.IsNullOrEmpty(_appearance.ImagePath)
+            ? "选择背景图片…"
+            : "当前：" + Path.GetFileName(_appearance.ImagePath);
+    }
+
+    private async Task ApplyAppearanceAsync(bool refreshLists)
+    {
+        AppearanceService.Apply(_appearance, this);
+        // 背景图层
+        if (_appearance.Mode == "image" && !string.IsNullOrEmpty(_appearance.ImagePath))
+        {
+            var dim = (byte)Math.Round(255 * _appearance.Dim / 100.0);
+            BackgroundDim.Background = new SolidColorBrush(new Windows.UI.Color { A = dim, R = 0, G = 0, B = 0 });
+            try
+            {
+                var blurredPath = await AppearanceService.BuildBlurredImageAsync(_appearance.ImagePath, _appearance.Blur);
+                var bitmap = new BitmapImage(new Uri(blurredPath));
+                BackgroundImage.Source = bitmap;
+                BackgroundLayer.Visibility = Visibility.Visible;
+            }
+            catch
+            {
+                BackgroundLayer.Visibility = Visibility.Collapsed;
+            }
+        }
+        else
+        {
+            BackgroundLayer.Visibility = Visibility.Collapsed;
+            BackgroundImage.Source = null;
+        }
+
+        if (refreshLists)
+        {
+            // 行渲染器在构建时读取画刷，切换外观后重建消息/会话行
+            var selected = SessionList.SelectedItem;
+            SessionList.ItemsSource = null;
+            SessionList.ItemsSource = ViewModel.Sessions;
+            MessageList.ItemsSource = null;
+            MessageList.ItemsSource = ViewModel.Messages;
+            if (selected != null && ReferenceEquals(selected, ViewModel.CurrentSession))
+            {
+                SessionList.SelectedItem = selected;
+            }
+            if (ViewModel.CurrentChat != null)
+            {
+                RunOnUi(ScrollToBottom); // 重建后保持阅读位置在最新消息
+            }
+        }
+    }
+
+    private void OnBackdropModeChanged(object sender, SelectionChangedEventArgs args)
+    {
+        if (_suppressAppearanceEvents || BackdropMode.SelectedItem is not RadioButton item) return;
+        var mode = item.Tag as string ?? "acrylic";
+        if (mode == "image" && string.IsNullOrEmpty(_appearance.ImagePath))
+        {
+            // 尚未选图：先保持当前模式并弹图选择
+            _suppressAppearanceEvents = true;
+            BackdropMode.SelectedIndex = _appearance.Mode switch { "mica" => 0, _ => 1 };
+            _suppressAppearanceEvents = false;
+            _ = PickBackgroundAsync();
+            return;
+        }
+        _appearance.Mode = mode;
+        AppearanceService.Save(_appearance);
+        ImageOptions.Visibility = mode == "image" ? Visibility.Visible : Visibility.Collapsed;
+        _ = ApplyAppearanceAsync(refreshLists: true);
+    }
+
+    private void OnBackdropSliderChanged(object sender, RangeBaseValueChangedEventArgs args)
+    {
+        if (_suppressAppearanceEvents || _appearance == null) return;
+        _appearance.Blur = (int)BlurSlider.Value;
+        _appearance.Dim = (int)DimSlider.Value;
+        _appearance.PanelOpacity = (int)PanelSlider.Value;
+        if (_appearance.Blur == _lastBlur && _appearance.Dim == _lastDim && _appearance.PanelOpacity == _lastPanel) return;
+        _lastBlur = _appearance.Blur;
+        _lastDim = _appearance.Dim;
+        _lastPanel = _appearance.PanelOpacity;
+        AppearanceService.Save(_appearance);
+        _ = ApplyAppearanceAsync(refreshLists: false);
+    }
+
+    private async void OnPickBackground(object sender, RoutedEventArgs e) => await PickBackgroundAsync();
+
+    private async Task PickBackgroundAsync()
+    {
+        var picker = new FileOpenPicker
+        {
+            SuggestedStartLocation = PickerLocationId.PicturesLibrary,
+            ViewMode = PickerViewMode.Thumbnail,
+        };
+        picker.FileTypeChoices.Add("图片", new List<string> { ".png", ".jpg", ".jpeg", ".bmp", ".webp" });
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+        var file = await picker.PickSingleFileAsync();
+        if (file == null)
+        {
+            SyncAppearanceControls();
+            return;
+        }
+        _appearance.ImagePath = file.Path;
+        _appearance.Mode = "image";
+        AppearanceService.Save(_appearance);
+        SyncAppearanceControls();
+        _ = ApplyAppearanceAsync(refreshLists: true);
+    }
+
+    private async void OnResetAppearance(object sender, RoutedEventArgs e)
+    {
+        _appearance = new AppearanceSettings();
+        AppearanceService.Save(_appearance);
+        SyncAppearanceControls();
+        await ApplyAppearanceAsync(refreshLists: true);
     }
 
     private void WireInteractions()
     {
         MessageInteractions.QuoteRequested += async vm =>
         {
-            var target = await ViewModel.JumpToQuoteAsync(vm.ServerId);
+            // 引用块点击要跳到"被引用的原消息"，必须用 refermsg 的 svrid；
+            // vm.ServerId 是引用消息自己的 server_id，用它只会定位到自己（修复跳转失效）。
+            var serverId = vm?.Message?.Quote?.SvrId;
+            if (string.IsNullOrEmpty(serverId)) return;
+            var target = await ViewModel.JumpToQuoteAsync(serverId);
             if (target == null) return;
             await Task.Delay(150);
             RunOnUi(() =>
             {
                 MessageList.UpdateLayout();
-                MessageList.ScrollIntoView(target, ScrollIntoViewAlignment.Leading);
+                ScrollMessageToCenter(target);
             });
             await Task.Delay(150);
             target.IsHighlighted = true;
@@ -281,6 +432,30 @@ public sealed partial class MainWindow : Window
         _messagesScroll?.ChangeView(null, _messagesScroll.ScrollableHeight, null, true);
     }
 
+    /// <summary>
+    /// 将目标消息滚动到视口垂直居中（微信定位样式）；
+    /// ScrollIntoView 只有 Leading/Default，改用 ChangeView 计算居中偏移。
+    /// </summary>
+    private void ScrollMessageToCenter(MessageViewModel target)
+    {
+        if (_messagesScroll == null) return;
+        try
+        {
+            if (MessageList.ContainerFromItem(target) is not FrameworkElement container) return;
+            container.UpdateLayout();
+            var origin = container.TransformToVisual(_messagesScroll.Content as UIElement ?? MessageList)
+                .TransformPoint(new Windows.Foundation.Point(0, 0));
+            var itemTop = origin.Y + _messagesScroll.VerticalOffset;
+            var centered = itemTop - (_messagesScroll.ViewportHeight / 2) + (container.ActualHeight / 2);
+            _messagesScroll.ChangeView(null, Math.Max(0, centered), null, true);
+        }
+        catch
+        {
+            // 兜底：定位失败时退回 Leading 对齐
+            MessageList.ScrollIntoView(target, ScrollIntoViewAlignment.Leading);
+        }
+    }
+
     // ---------- sidebar ----------
 
     private void OnSessionSearchChanged(object sender, TextChangedEventArgs args)
@@ -292,6 +467,8 @@ public sealed partial class MainWindow : Window
     {
         if (args.AddedItems.Count == 0) return;
         if (args.AddedItems[0] is not SessionViewModel session) return;
+        // 外观切换后恢复选中项会再次触发本事件：同一会话不重复加载
+        if (ReferenceEquals(session, ViewModel.CurrentSession) && ViewModel.CurrentChat != null) return;
         MessageRow.CurrentChatIsGroup = session.IsGroup;
         EmptyState.Visibility = Visibility.Collapsed;
         ChatHeader.Visibility = Visibility.Visible;

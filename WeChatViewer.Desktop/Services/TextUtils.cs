@@ -83,7 +83,9 @@ public static partial class TextUtils
     public static string GetAttr(string xml, string name)
     {
         if (string.IsNullOrEmpty(xml)) return null;
-        var m = Regex.Match(xml, $"{Regex.Escape(name)}\\s*=\\s*\"([^\"]*)\"");
+        // 词边界保护：避免 GetAttr(xml, "md5") 误匹配 cdnthumbmd5= / hdthumbmd5=，
+        // GetAttr(xml, "name") 误匹配 username= 等属性名尾部。
+        var m = Regex.Match(xml, $"(?<![A-Za-z0-9_-]){Regex.Escape(name)}\\s*=\\s*\"([^\"]*)\"");
         return m.Success ? m.Groups[1].Value : null;
     }
 
@@ -144,6 +146,23 @@ public static partial class TextUtils
         if (text == null) return "";
         return Regex.Replace(Regex.Replace(text, "<[^>]+>", ""), "\\s+", " ").Trim();
     }
+
+    /// <summary>
+    /// 文本消息内嵌的经典小表情以 &lt;img alt="[微笑]" ...&gt; 形式存储，
+    /// 提取 alt 文本（如 [微笑]），其余 img 标签丢弃，避免原始 XML 泄漏到界面。
+    /// </summary>
+    public static string InlineEmoteToAlt(string text)
+    {
+        if (string.IsNullOrEmpty(text) || text.IndexOf("<img", StringComparison.OrdinalIgnoreCase) < 0) return text;
+        return ImgAltRegex().Replace(text, m =>
+        {
+            var alt = m.Groups[1].Value;
+            return alt.Length > 0 ? alt : "";
+        });
+    }
+
+    [GeneratedRegex("<img\\b[^>]*?alt\\s*=\\s*\"([^\"]*)\"[^>]*>|<img\\b[^>]*/?>", RegexOptions.IgnoreCase)]
+    private static partial Regex ImgAltRegex();
 
     public static IEnumerable<(string Type, string Value)> SplitUrls(string text)
     {

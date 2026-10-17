@@ -270,16 +270,22 @@ public static class ImageDecoder
     {
         if (IsDisplayableImage(buf)) return buf;
         if (key == null || key.Length != 16 || buf == null || buf.Length == 0) return null;
+        return AesCbcDecrypt(buf, key, key) is { Length: > 0 } plain && IsImageMagic(plain) ? plain : null;
+    }
+
+    /// <summary>AES-128/256-CBC (PKCS7) 解密；失败返回 null。</summary>
+    public static byte[] AesCbcDecrypt(byte[] buf, byte[] key, byte[] iv)
+    {
+        if (buf == null || buf.Length == 0 || key == null || iv == null) return null;
         try
         {
-            using var aes = Aes.Create();
+            using var aes = System.Security.Cryptography.Aes.Create();
             aes.Key = key;
-            aes.IV = key;
-            aes.Mode = CipherMode.CBC;
-            aes.Padding = PaddingMode.PKCS7;
+            aes.IV = iv;
+            aes.Mode = System.Security.Cryptography.CipherMode.CBC;
+            aes.Padding = System.Security.Cryptography.PaddingMode.PKCS7;
             using var dec = aes.CreateDecryptor();
-            var plain = dec.TransformFinalBlock(buf, 0, buf.Length);
-            return IsImageMagic(plain) ? plain : null;
+            return dec.TransformFinalBlock(buf, 0, buf.Length);
         }
         catch
         {

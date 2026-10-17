@@ -545,7 +545,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         try
         {
             var chat = _currentChat;
-            var pending = new Dictionary<string, string>();
+            var pending = new Dictionary<string, StickerPayload>();
             await Task.Run(() =>
             {
                 _data.AllMessages(chat, page =>
@@ -553,11 +553,14 @@ public class MainViewModel : ViewModelBase, IDisposable
                     foreach (var message in page)
                     {
                         if (message.Kind != "sticker") continue;
-                        var md5 = (message.Sticker?.Md5 ?? "").ToLowerInvariant();
-                        var url = message.Sticker?.CdnUrl;
-                        if (!System.Text.RegularExpressions.Regex.IsMatch(md5, "^[0-9a-f]{32}$") || string.IsNullOrEmpty(url)) continue;
+                        var payload = message.Sticker;
+                        if (payload == null) continue;
+                        var md5 = (payload.Md5 ?? "").ToLowerInvariant();
+                        if (!System.Text.RegularExpressions.Regex.IsMatch(md5, "^[0-9a-f]{32}$")) continue;
                         if (_data.ReadSticker(md5) != null) continue;
-                        if (!pending.ContainsKey(md5)) pending[md5] = url;
+                        var hasUrl = !string.IsNullOrEmpty(payload.CdnUrl) || !string.IsNullOrEmpty(payload.EncryptUrl);
+                        if (!hasUrl) continue;
+                        if (!pending.ContainsKey(md5)) pending[md5] = payload;
                     }
                 });
             });
@@ -570,7 +573,15 @@ public class MainViewModel : ViewModelBase, IDisposable
                 await semaphore.WaitAsync();
                 try
                 {
-                    var result = await _data.DownloadStickerAsync(kv.Key, kv.Value);
+                    var payload = kv.Value;
+                    var aesKey = payload.AesKey is { Length: 32 } ? payload.AesKey : null;
+                    var result = !string.IsNullOrEmpty(payload.CdnUrl)
+                        ? await _data.DownloadStickerAsync(kv.Key, payload.CdnUrl, aesKey)
+                        : null;
+                    if (result == null && !string.IsNullOrEmpty(payload.EncryptUrl))
+                    {
+                        result = await _data.DownloadStickerAsync(kv.Key, payload.EncryptUrl, aesKey);
+                    }
                     Interlocked.Increment(ref done);
                     if (result != null) Interlocked.Increment(ref ok);
                     else Interlocked.Increment(ref failed);
@@ -642,16 +653,38 @@ public class MainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public byte[] ResolveStickerBytes(string md5, string cdnUrl)
+    /// <summary>
+    /// 表情解析链：主 md5 → 缩略图 md5（本地缓存常按 thumb 键存储）→ cdnurl → encrypturl。
+    /// 任一环成功即返回，失败逐级回退。
+    /// </summary>
+    public byte[] ResolveStickerBytes(Message message)
     {
+        var payload = message?.Sticker;
+        if (payload == null || _data == null) return null;
         try
         {
-            var sticker = _data?.ReadSticker(md5);
-            if (sticker == null && cdnUrl is { Length: > 0 } && _data != null)
+            var keys = new[] { payload.Md5, payload.ThumbMd5 }
+                .Where(k => !string.IsNullOrEmpty(k) && System.Text.RegularExpressions.Regex.IsMatch(k, "^[0-9a-fA-F]{32}$"))
+                .Select(k => k.ToLowerInvariant())
+                .Distinct()
+                .ToList();
+            if (keys.Count > 0)
             {
-                sticker = _data.DownloadStickerAsync(md5, cdnUrl).GetAwaiter().GetResult();
+                if (_data.ReadSticker(keys[0]) is { } primary) return primary.Buffer;
+                if (keys.Count > 1 && _data.ReadSticker(keys[1]) is { } thumb) return thumb.Buffer;
             }
-            return sticker?.Buffer;
+            var aesKey = payload.AesKey is { Length: 32 } ? payload.AesKey : null;
+            if (!string.IsNullOrEmpty(payload.CdnUrl) && keys.Count > 0)
+            {
+                var downloaded = _data.DownloadStickerAsync(keys[0], payload.CdnUrl, aesKey).GetAwaiter().GetResult();
+                if (downloaded != null) return downloaded.Buffer;
+            }
+            if (!string.IsNullOrEmpty(payload.EncryptUrl) && keys.Count > 0)
+            {
+                var encrypted = _data.DownloadStickerAsync(keys[0], payload.EncryptUrl, aesKey).GetAwaiter().GetResult();
+                if (encrypted != null) return encrypted.Buffer;
+            }
+            return null;
         }
         catch
         {

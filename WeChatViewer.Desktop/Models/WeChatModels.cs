@@ -77,6 +77,12 @@ public class StickerPayload
     public string ThumbMd5 { get; set; } = "";
     public long Length { get; set; }
     public string CdnUrl { get; set; } = "";
+
+    /// <summary>emoji XML 的 aeskey 属性：encrypturl 变体的 AES-128 密钥（32 位 hex）。</summary>
+    public string AesKey { get; set; } = "";
+
+    /// <summary>emoji XML 的 encrypturl 属性（加密 CDN 地址，下载后需 aeskey 解密）。</summary>
+    public string EncryptUrl { get; set; } = "";
 }
 
 public class LocationPayload

@@ -367,10 +367,31 @@ public sealed partial class MessageRow : UserControl
             }
             else
             {
-                block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = value });
+                AddTextWithEmotes(block, value);
             }
         }
         return block;
+    }
+
+    /// <summary>普通文本 → 按经典表情代码切分为 Run/emoji Run，保留超链接之外的表情可视化。</summary>
+    private static void AddTextWithEmotes(Microsoft.UI.Xaml.Controls.TextBlock block, string text)
+    {
+        foreach (var (type, value) in WeChatEmotes.Tokenize(text))
+        {
+            if (type == "emote")
+            {
+                block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run
+                {
+                    Text = value,
+                    FontFamily = new FontFamily("Segoe UI Emoji"),
+                    FontSize = 15,
+                });
+            }
+            else if (value.Length > 0)
+            {
+                block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = value });
+            }
+        }
     }
 
     private FrameworkElement BuildImageContent(Message message)
@@ -721,7 +742,7 @@ public sealed partial class MessageRow : UserControl
         {
             try
             {
-                var bytes = _stickerBytesResolver?.Invoke(md5, message.Sticker?.CdnUrl);
+                var bytes = _stickerBytesResolver?.Invoke(message);
                 if (bytes == null) return;
                 var bitmap = await UiHelpers.BitmapFromBytesAsync(bytes);
                 if (bitmap == null) return;
@@ -752,7 +773,7 @@ public sealed partial class MessageRow : UserControl
         });
         var textBlock = new TextBlock
         {
-            Text = quote?.Text ?? "",
+            Text = WeChatEmotes.Replace(quote?.Text ?? ""),
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             MaxLines = 3,
@@ -789,7 +810,7 @@ public sealed partial class MessageRow : UserControl
 
     public static Func<string> _chatResolver;
     public static Func<string, string, byte[]> _imageBytesResolver;
-    public static Func<string, string, byte[]> _stickerBytesResolver;
+    public static Func<Message, byte[]> _stickerBytesResolver;
     public static Func<string, string> _videoThumbResolver;
     public static Func<Message, string> _fileResolver;
     public static Microsoft.UI.Dispatching.DispatcherQueue _dispatcher;
@@ -798,7 +819,7 @@ public sealed partial class MessageRow : UserControl
         Microsoft.UI.Dispatching.DispatcherQueue dispatcher,
         Func<string> chatResolver,
         Func<string, string, byte[]> imageBytesResolver,
-        Func<string, string, byte[]> stickerBytesResolver,
+        Func<Message, byte[]> stickerBytesResolver,
         Func<string, string> videoThumbResolver,
         Func<Message, string> fileResolver)
     {

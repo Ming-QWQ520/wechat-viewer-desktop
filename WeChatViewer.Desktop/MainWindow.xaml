@@ -18,6 +18,12 @@
       <RowDefinition Height="*"/>
     </Grid.RowDefinitions>
 
+    <!-- ======== custom fullscreen background (自定义背景图模式) ======== -->
+    <Grid x:Name="BackgroundLayer" Grid.RowSpan="2" Visibility="Collapsed">
+      <Image x:Name="BackgroundImage" Stretch="UniformToFill"/>
+      <Border x:Name="BackgroundDim" Background="#00000000"/>
+    </Grid>
+
     <!-- ======== custom title bar ======== -->
     <Grid x:Name="AppTitleBar" Height="44">
       <StackPanel Orientation="Horizontal" Spacing="10" Margin="14,0,0,0" VerticalAlignment="Center">
@@ -43,8 +49,48 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
-          <TextBox x:Name="SessionSearchBox" Margin="12,2,12,10" PlaceholderText="搜索会话 / 联系人"
-                   TextChanged="OnSessionSearchChanged"/>
+          <Grid Margin="12,2,12,10" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="SessionSearchBox" PlaceholderText="搜索会话 / 联系人"
+                     TextChanged="OnSessionSearchChanged"/>
+            <Button x:Name="AppearanceButton" Grid.Column="1" Width="36" Height="36" Padding="0"
+                    VerticalAlignment="Center" ToolTipService.ToolTip="外观设置（背景 / 液态玻璃）">
+              <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE713;" FontSize="14"/>
+              <Button.Flyout>
+                <Flyout x:Name="AppearanceFlyout" Placement="Bottom">
+                  <StackPanel Width="300" Spacing="12" Margin="0,4">
+                    <TextBlock Text="外观设置" FontSize="15" FontWeight="SemiBold"/>
+                    <RadioButtons x:Name="BackdropMode" SelectionChanged="OnBackdropModeChanged">
+                      <RadioButton Content="Mica 质感（跟随系统）" Tag="mica"/>
+                      <RadioButton Content="液态玻璃（亚克力透明）" Tag="acrylic"/>
+                      <RadioButton Content="自定义全屏背景图" Tag="image"/>
+                    </RadioButtons>
+                    <StackPanel x:Name="ImageOptions" Spacing="10" Visibility="Collapsed">
+                      <Button HorizontalAlignment="Stretch" Click="OnPickBackground">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8B9;" FontSize="14"/>
+                          <TextBlock x:Name="PickBackgroundText" Text="选择背景图片…" FontSize="12"/>
+                        </StackPanel>
+                      </Button>
+                      <TextBlock Text="模糊强度" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
+                      <Slider x:Name="BlurSlider" Minimum="0" Maximum="4" StepFrequency="1"
+                              ValueChanged="OnBackdropSliderChanged"/>
+                      <TextBlock Text="画面压暗" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
+                      <Slider x:Name="DimSlider" Minimum="0" Maximum="70" StepFrequency="5"
+                              ValueChanged="OnBackdropSliderChanged"/>
+                    </StackPanel>
+                    <TextBlock Text="面板透明度（越小越通透）" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
+                    <Slider x:Name="PanelSlider" Minimum="50" Maximum="100" StepFrequency="5"
+                            ValueChanged="OnBackdropSliderChanged"/>
+                    <Button Content="恢复默认" HorizontalAlignment="Right" Click="OnResetAppearance"/>
+                  </StackPanel>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+          </Grid>
           <ListView x:Name="SessionList" Grid.Row="1" SelectionMode="Single"
                     SelectionChanged="OnSessionSelected" IsTabStop="True">
             <ListView.ItemTemplate>
