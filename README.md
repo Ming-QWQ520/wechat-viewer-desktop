@@ -57,11 +57,18 @@
 
 ## 快速开始
 
-### 方式一：下载 CI 构建产物（推荐）
+### 方式一：下载发行版（推荐）
 
-1. 进入本仓库的 **Actions** 标签页，选择最新的 **Build Windows Desktop** 运行记录；
-2. 在 **Artifacts** 中下载 `WeChatViewer.Desktop-win-x64.zip`；
-3. 解压到任意目录（**路径中不要包含中文**），双击 `WeChatViewer.Desktop.exe`。
+进入 [Releases](https://github.com/Ming-QWQ520/wechat-viewer-desktop/releases) 页面，下载 **v2.1.0** 中的文件，二选一：
+
+| 文件 | 说明 |
+| --- | --- |
+| `WeChatViewer-Setup-2.1.0-win-x64.exe` | **安装版（推荐）**：双击安装，自动创建开始菜单与桌面快捷方式，控制面板可卸载 |
+| `WeChatViewer.Desktop-2.1.0-win-x64.zip` | **绿色版**：解压后运行 `WeChatViewer.Desktop.exe`，无任何安装过程 |
+
+> 也可以在本仓库 **Actions → Build Windows Desktop → Artifacts** 下载每次构建的产物。
+
+> **为什么绿色版有几百个文件？** WinUI 3 应用的 .NET 运行库与 WinUI 原生 DLL 必须与 exe 位于同一目录（官方限制，无法合并为单文件，也不能移入子文件夹），因此绿色版自带完整运行时。想要整洁的体验请使用安装版，所有运行时文件都会收纳进安装目录，桌面上只有一个快捷方式。
 
 ### 方式二：本地构建
 
@@ -161,7 +168,9 @@ data\keys.json
 1. `go build` 编译 `wechat-keys.exe`、`imgcheck.exe`；
 2. mingw gcc 编译 SILK 解码器 `silkdec.exe`；
 3. `dotnet publish`（自包含 + WindowsAppSDK 自包含，非打包部署）输出到 `bin\publish\win-x64`；
-4. 打包 zip 并上传为 Artifact，可直接下载解压运行。
+4. **启动冒烟测试**：在 CI 中直接拉起 exe，30 秒后确认进程存活（能弹出窗口）才算成功，并输出应用启动日志；
+5. Inno Setup 打包安装版 `WeChatViewer-Setup-*.exe` + 绿色版 zip（剔除 pdb 与日志）；
+6. 上传 Artifact 并自动发布到 **Releases**（打 tag `v2.1.0`）。
 
 ---
 
@@ -191,6 +200,13 @@ data\keys.json
 ---
 
 ## 常见问题
+
+**双击 exe 没有任何窗口弹出？**
+按顺序排查：
+1. **确认是从压缩包解压后运行的**（不要在压缩软件的预览窗口里直接双击）；
+2. **解除文件锁定**：从浏览器下载的 zip 解压后文件可能被 Windows 标记为不信任。在解压目录打开 PowerShell 执行 `Get-ChildItem -Recurse | Unblock-File`，或右键 exe → 属性 → 勾选「解除锁定」；
+3. **查看启动日志**：程序会在 exe 旁的 `logs\` 目录（不可写时在 `%LOCALAPPDATA%\WeChatViewer.Desktop\logs\`）写入 `app-日期.log`；如果崩溃会弹出错误对话框并写明原因，把日志内容反馈给开发者即可；
+4. 若 SmartScreen 弹出「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」（应用未做代码签名）。
 
 **提取密钥失败？**  
 确认微信已登录且以当前用户运行；必要时以管理员身份运行。若杀毒软件拦截进程读取，请放行。

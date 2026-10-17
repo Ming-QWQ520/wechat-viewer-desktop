@@ -25,8 +25,11 @@ public sealed partial class MainWindow : Window
 
     public MainWindow()
     {
+        StartupLogger.Log("MainWindow..ctor: 创建 ViewModel");
         ViewModel = new MainViewModel(action => DispatcherQueue.TryEnqueue(() => action()));
+        StartupLogger.Log("MainWindow..ctor: InitializeComponent 开始");
         InitializeComponent();
+        StartupLogger.Log("MainWindow..ctor: XAML 加载完成");
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
@@ -48,11 +51,20 @@ public sealed partial class MainWindow : Window
         // Window has no Loaded event; hook the content root instead.
         ((FrameworkElement)Content).Loaded += OnLoaded;
         _ = InitializeAsync();
+        StartupLogger.Log("MainWindow..ctor 完成");
     }
 
     private async Task InitializeAsync()
     {
-        await ViewModel.InitializeAsync();
+        try
+        {
+            await ViewModel.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            StartupLogger.Log("数据初始化失败: " + ex);
+            ViewModel.LogLines.Add("初始化失败: " + ex.Message);
+        }
         ApplyBootstrapVisibility();
     }
 

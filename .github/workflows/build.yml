@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -69,25 +72,100 @@ jobs:
             $out = $exe.DirectoryName
             Write-Host "Found output at $out"
           }
+          $files = Get-ChildItem $out -Recurse -File
           Write-Host "Output: $out"
+          Write-Host ("Total files: {0}  |  Top-level items: {1}" -f $files.Count, (Get-ChildItem $out).Count)
           Get-ChildItem $out -Filter *.exe | Select-Object Name
           if (-not (Test-Path "$out\tools\wechat-keys.exe")) { Write-Warning "tools\wechat-keys.exe missing" }
           if (-not (Test-Path "$out\tools\silkdec.exe")) { Write-Warning "tools\silkdec.exe missing" }
 
-      - name: Collect artifacts
+      - name: Smoke test (launch the app and verify it stays alive)
         shell: pwsh
         run: |
           $out = "WeChatViewer.Desktop\bin\publish\win-x64"
-          if (-not (Test-Path $out)) {
-            $exe = Get-ChildItem -Recurse -Filter "WeChatViewer.Desktop.exe" | Select-Object -First 1
-            $out = $exe.DirectoryName
+          $exe = Join-Path $out "WeChatViewer.Desktop.exe"
+          if (-not (Test-Path $exe)) { throw "exe missing: $exe" }
+          Write-Host "Launching $exe ..."
+          $p = Start-Process -FilePath $exe -WorkingDirectory $out -PassThru
+          Start-Sleep -Seconds 30
+          if ($p.HasExited) {
+            Write-Host "::error::APP EXITED EARLY, exit code = $($p.ExitCode)"
+            if (Test-Path "$out\logs") {
+              Get-ChildItem "$out\logs" -File | ForEach-Object {
+                Write-Host "----- $($_.Name) -----"
+                Get-Content $_.FullName
+              }
+            } else { Write-Host "(no logs written - likely blocked before Main)" }
+            exit 1
           }
-          Compress-Archive -Path "$out\*" -DestinationPath "WeChatViewer.Desktop-win-x64.zip" -Force
-          Get-Item WeChatViewer.Desktop-win-x64.zip | Select-Object Name, @{n='SizeMB';e={[math]::Round($_.Length/1MB,1)}}
+          Write-Host "App is alive after 30s -> window started OK"
+          try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
+          if (Test-Path "$out\logs") {
+            Get-ChildItem "$out\logs" -File | ForEach-Object {
+              Write-Host "----- $($_.Name) -----"
+              Get-Content $_.FullName
+            }
+          }
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          # ensure UTF-8 BOM so Inno reads the Chinese strings correctly
+          $iss = "installer\installer.iss"
+          $c = Get-Content $iss -Raw
+          [IO.File]::WriteAllText((Resolve-Path $iss).Path, $c, (New-Object Text.UTF8Encoding $true))
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            Write-Host "ISCC not found, installing via choco..."
+            choco install innosetup -y --no-progress
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe still missing" }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          & $iscc /DAppVersion=2.1.0 /DPublishDir="WeChatViewer.Desktop\bin\publish\win-x64" $iss
+          if ($LASTEXITCODE -ne 0) { throw "installer build failed" }
+          Get-ChildItem dist | Select-Object Name, Length
+
+      - name: Collect portable zip
+        shell: pwsh
+        run: |
+          $out = "WeChatViewer.Desktop\bin\publish\win-x64"
+          $stage = "dist\portable\WeChatViewer.Desktop"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $src = (Resolve-Path $out).Path
+          Get-ChildItem $src -Recurse -File | Where-Object {
+            $_.Extension -ne ".pdb" -and $_.FullName -notmatch '\\logs(\\|$)'
+          } | ForEach-Object {
+            $rel = $_.FullName.Substring($src.Length + 1)
+            $dst = Join-Path $stage $rel
+            New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
+            Copy-Item $_.FullName $dst -Force
+          }
+          Compress-Archive -Path "dist\portable\WeChatViewer.Desktop" -DestinationPath "dist\WeChatViewer.Desktop-2.1.0-win-x64.zip" -Force
+          Remove-Item "dist\portable" -Recurse -Force
+          $zip = Get-Item "dist\WeChatViewer.Desktop-2.1.0-win-x64.zip"
+          Write-Host ("Portable zip: {0}  ({1} MB)" -f $zip.Name, [math]::Round($zip.Length/1MB,1))
+          Get-ChildItem dist | Select-Object Name, @{n='SizeMB';e={[math]::Round($_.Length/1MB,1)}}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WeChatViewer.Desktop-win-x64
-          path: WeChatViewer.Desktop-win-x64.zip
+          name: WeChatViewer.Desktop-2.1.0-win-x64
+          path: dist/*
           if-no-files-found: error
+
+      - name: Release (tag v2.1.0)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.1.0
+          name: WeChatViewer Desktop 2.1.0
+          body: |
+            ### 下载说明
+            - **WeChatViewer-Setup-2.1.0-win-x64.exe**：安装版（推荐）。双击安装，自动创建开始菜单与桌面快捷方式，卸载干净。
+            - **WeChatViewer.Desktop-2.1.0-win-x64.zip**：绿色版。解压后运行 WeChatViewer.Desktop.exe。
+            > WinUI 3 应用的 .NET / WinUI 运行库文件必须与 exe 位于同一目录（官方限制），绿色版无法合并为单个 exe，推荐使用安装版。
+          files: |
+            dist/WeChatViewer-Setup-2.1.0-win-x64.exe
+            dist/WeChatViewer.Desktop-2.1.0-win-x64.zip
+          fail_on_unmatched_files: true
