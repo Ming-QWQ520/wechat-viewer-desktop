@@ -115,6 +115,16 @@ jobs:
           Write-Host "App is alive after 30s and log is clean -> window started OK"
           try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {}
 
+      - name: Read app version from csproj
+        id: ver
+        shell: pwsh
+        run: |
+          [xml]$proj = Get-Content "WeChatViewer.Desktop\WeChatViewer.Desktop.csproj"
+          $v = ($proj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          if (-not $v) { throw "Version missing in csproj" }
+          Write-Output "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "App version: $v"
+
       - name: Build installer (Inno Setup)
         shell: pwsh
         run: |
@@ -130,7 +140,7 @@ jobs:
           }
           if (-not (Test-Path $iscc)) { throw "ISCC.exe still missing" }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          & $iscc /DAppVersion=2.1.0 /DPublishDir="..\WeChatViewer.Desktop\bin\publish\win-x64" $iss
+          & $iscc /DAppVersion=${{ steps.ver.outputs.version }} /DPublishDir="..\WeChatViewer.Desktop\bin\publish\win-x64" $iss
           if ($LASTEXITCODE -ne 0) { throw "installer build failed" }
           Get-ChildItem dist | Select-Object Name, Length
 
@@ -149,31 +159,32 @@ jobs:
             New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
             Copy-Item $_.FullName $dst -Force
           }
-          Compress-Archive -Path "dist\portable\WeChatViewer.Desktop" -DestinationPath "dist\WeChatViewer.Desktop-2.1.0-win-x64.zip" -Force
+          $zipName = "WeChatViewer.Desktop-${{ steps.ver.outputs.version }}-win-x64.zip"
+          Compress-Archive -Path "dist\portable\WeChatViewer.Desktop" -DestinationPath "dist\$zipName" -Force
           Remove-Item "dist\portable" -Recurse -Force
-          $zip = Get-Item "dist\WeChatViewer.Desktop-2.1.0-win-x64.zip"
+          $zip = Get-Item "dist\$zipName"
           Write-Host ("Portable zip: {0}  ({1} MB)" -f $zip.Name, [math]::Round($zip.Length/1MB,1))
           Get-ChildItem dist | Select-Object Name, @{n='SizeMB';e={[math]::Round($_.Length/1MB,1)}}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WeChatViewer.Desktop-2.1.0-win-x64
+          name: WeChatViewer.Desktop-${{ steps.ver.outputs.version }}-win-x64
           path: dist/*
           if-no-files-found: error
 
-      - name: Release (tag v2.1.0)
+      - name: Release (tag v${{ steps.ver.outputs.version }})
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1.0
-          name: WeChatViewer Desktop 2.1.0
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: WeChatViewer Desktop ${{ steps.ver.outputs.version }}
           body: |
             ### 下载说明
-            - **WeChatViewer-Setup-2.1.0-win-x64.exe**：安装版（推荐）。双击安装，自动创建开始菜单与桌面快捷方式，卸载干净。
-            - **WeChatViewer.Desktop-2.1.0-win-x64.zip**：绿色版。解压后运行 WeChatViewer.Desktop.exe。
+            - **WeChatViewer-Setup-${{ steps.ver.outputs.version }}-win-x64.exe**：安装版（推荐）。双击安装，自动创建开始菜单与桌面快捷方式，卸载干净。
+            - **WeChatViewer.Desktop-${{ steps.ver.outputs.version }}-win-x64.zip**：绿色版。解压后运行 WeChatViewer.Desktop.exe。
             > WinUI 3 应用的 .NET / WinUI 运行库文件必须与 exe 位于同一目录（官方限制），绿色版无法合并为单个 exe，推荐使用安装版。
           files: |
-            dist/WeChatViewer-Setup-2.1.0-win-x64.exe
-            dist/WeChatViewer.Desktop-2.1.0-win-x64.zip
+            dist/WeChatViewer-Setup-${{ steps.ver.outputs.version }}-win-x64.exe
+            dist/WeChatViewer.Desktop-${{ steps.ver.outputs.version }}-win-x64.zip
           fail_on_unmatched_files: true

@@ -59,12 +59,12 @@
 
 ### 方式一：下载发行版（推荐）
 
-进入 [Releases](https://github.com/Ming-QWQ520/wechat-viewer-desktop/releases) 页面，下载 **v2.1.0** 中的文件，二选一：
+进入 [Releases](https://github.com/Ming-QWQ520/wechat-viewer-desktop/releases) 页面，下载 **v2.2.0** 中的文件，二选一：
 
 | 文件 | 说明 |
 | --- | --- |
-| `WeChatViewer-Setup-2.1.0-win-x64.exe` | **安装版（推荐）**：双击安装，自动创建开始菜单与桌面快捷方式，控制面板可卸载 |
-| `WeChatViewer.Desktop-2.1.0-win-x64.zip` | **绿色版**：解压后运行 `WeChatViewer.Desktop.exe`，无任何安装过程 |
+| `WeChatViewer-Setup-2.2.0-win-x64.exe` | **安装版（推荐）**：双击安装，自动创建开始菜单与桌面快捷方式，控制面板可卸载 |
+| `WeChatViewer.Desktop-2.2.0-win-x64.zip` | **绿色版**：解压后运行 `WeChatViewer.Desktop.exe`，无任何安装过程 |
 
 > 也可以在本仓库 **Actions → Build Windows Desktop → Artifacts** 下载每次构建的产物。
 
@@ -170,7 +170,7 @@ data\keys.json
 3. `dotnet publish`（自包含 + WindowsAppSDK 自包含，非打包部署）输出到 `bin\publish\win-x64`；
 4. **启动冒烟测试**：在 CI 中直接拉起 exe，30 秒后确认进程存活（能弹出窗口）才算成功，并输出应用启动日志；
 5. Inno Setup 打包安装版 `WeChatViewer-Setup-*.exe` + 绿色版 zip（剔除 pdb 与日志）；
-6. 上传 Artifact 并自动发布到 **Releases**（打 tag `v2.1.0`）。
+6. 上传 Artifact 并自动发布到 **Releases**（tag 版本号自动读取自 csproj，当前 `v2.2.0`）。
 
 ---
 
@@ -210,6 +210,9 @@ data\keys.json
 
 **提取密钥失败？**  
 确认微信已登录且以当前用户运行；必要时以管理员身份运行。若杀毒软件拦截进程读取，请放行。
+
+**解密失败：日志里出现「正被另一进程占用」或「解密后的数据库缺失」？**  
+v2.2.0 起已支持在微信运行时以共享模式直读被占用的数据库，正常情况下无需退出微信。若仍失败：微信可能正在备份或校验数据，等几秒再点一次「提取密钥并启动」；或完全退出微信（含托盘）后再点一次。若反复失败，删除 `data\keys.json` 重新提取（keys.json 可能已过期）。
 
 **图片显示 `[图片]`？**  
 确认 `data\keys.json` 里有 `image_aes_key`；在微信中打开任意一张图片后点应用内「重新扫描图片密钥」。

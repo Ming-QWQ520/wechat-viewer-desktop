@@ -105,7 +105,8 @@ public sealed partial class WeChatData : IDisposable
         if (!_dbs.TryGetValue(rel, out var conn))
         {
             var file = Path.Combine(_decDir, rel);
-            if (!File.Exists(file)) throw new FileNotFoundException($"decrypted database missing: {rel}");
+            if (!File.Exists(file))
+                throw new FileNotFoundException($"解密后的数据库缺失: {rel}（上一步解密未生成该文件）");
             conn = new SqliteConnection(new SqliteConnectionStringBuilder
             {
                 DataSource = file,

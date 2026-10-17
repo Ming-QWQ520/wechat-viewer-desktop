@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Security.Cryptography;
+using System.Threading;
 
 namespace WeChatViewer.Desktop.Services;
 
@@ -125,7 +126,7 @@ public static class SqlCipherDecryptor
     /// <summary>Decrypt one encrypted SQLCipher database file to a plain SQLite file.</summary>
     public static (int Pages, int Reserve) DecryptDatabase(string srcPath, string dstPath, string encKeyHex)
     {
-        var src = File.ReadAllBytes(srcPath);
+        var src = ReadAllBytesShared(srcPath);
         if (src.Length < PageSize) throw new InvalidDataException("file too small");
         var encKey = HexToBytes(encKeyHex);
         if (encKey.Length != 32) throw new InvalidDataException("bad key length");
@@ -174,6 +175,75 @@ public static class SqlCipherDecryptor
         if (File.Exists(dstPath)) File.Delete(dstPath);
         File.Move(tmp, dstPath);
         return (totalPages, reserve);
+    }
+
+    /// <summary>
+    /// 以“共享读取”模式读入整个文件。
+    /// .NET 的 File.ReadAllBytes 以 FileShare.Read 打开文件，与微信进程持有的 SQLite 读写句柄
+    /// 冲突，会触发 sharing violation（“正被另一进程占用”）；原网页版基于 Node fs（全共享标志
+    /// 打开），故无此问题。此处显式使用 FileShare.ReadWrite|Delete，即使微信正在运行也能读取。
+    /// 另外：SQLite 的字节范围锁集中在 lock-byte page（偏移 0x40000000），该页不存放任何内容，
+    /// Windows 会拒绝其他句柄读取被锁区域，因此跳过该页并保持为零即可。
+    /// </summary>
+    private static byte[] ReadAllBytesShared(string path)
+    {
+        const int BufferSize = 1 << 16;
+        const long LockPageStart = 0x40000000;          // SQLite lock-byte page = 1073741824
+        const long LockPageEnd = LockPageStart + 4096;  // 整页无内容，保持全零
+
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete, BufferSize, FileOptions.SequentialScan);
+                long total = fs.Length;
+                if (total > int.MaxValue) throw new InvalidDataException("数据库超过 2 GB，无法载入内存");
+                var data = new byte[total];
+
+                long pos = 0;
+                while (pos < total)
+                {
+                    if (pos >= LockPageStart && pos < LockPageEnd)
+                    {
+                        pos = Math.Min(LockPageEnd, total); // 跳过 lock-byte page
+                        fs.Seek(pos, SeekOrigin.Begin);     // 同步推进流位置（目的地索引已跳过该页）
+                        continue;
+                    }
+                    int chunk = (int)Math.Min(BufferSize, total - pos);
+                    if (pos < LockPageStart && pos + chunk > LockPageStart)
+                    {
+                        chunk = (int)(LockPageStart - pos); // 不跨越锁页边界
+                    }
+                    int read = 0;
+                    while (read < chunk)
+                    {
+                        int n = fs.Read(data, (int)pos, chunk - read);
+                        if (n <= 0) throw new EndOfStreamException($"unexpected end of file at {pos + read}/{total}");
+                        pos += n;
+                        read += n;
+                    }
+                }
+                return data;
+            }
+            catch (IOException error) when (IsFileBusy(error) && attempt < 3)
+            {
+                // 微信可能正在备份/WAL checkpoint，稍等后重试
+                Thread.Sleep(500 * attempt);
+            }
+            catch (IOException error) when (IsFileBusy(error))
+            {
+                throw new IOException(
+                    "数据库文件正被微信占用（可能正在备份或校验）。请稍后重试；若反复出现，请完全退出微信后重新点击“提取密钥并启动”。", error);
+            }
+        }
+    }
+
+    private static bool IsFileBusy(IOException error)
+    {
+        const int SharingViolation = unchecked((int)0x80070020); // ERROR_SHARING_VIOLATION
+        const int LockViolation = unchecked((int)0x80070021);    // ERROR_LOCK_VIOLATION
+        return error.HResult == SharingViolation || error.HResult == LockViolation;
     }
 
     public static byte[] HexToBytes(string hex)

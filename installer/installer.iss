@@ -1,8 +1,8 @@
 ; Inno Setup script for WeChatViewer.Desktop
-; Built in CI: ISCC /DAppVersion=2.1.0 /DPublishDir=... installer\installer.iss
+; Built in CI: ISCC /DAppVersion=<from csproj> /DPublishDir=... installer\installer.iss
 
 #ifndef AppVersion
-#define AppVersion "2.1.0"
+#define AppVersion "2.2.0"
 #endif
 
 #ifndef PublishDir

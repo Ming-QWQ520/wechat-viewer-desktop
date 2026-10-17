@@ -200,6 +200,10 @@ public class MainViewModel : ViewModelBase, IDisposable
                 BootstrapNeeded = true;
                 return;
             }
+            if (stats.Failed > 0)
+            {
+                Log($"[init] 注意：{stats.Failed} 个数据库本次解密失败，对应会话可能缺失；稍后重试可补全。");
+            }
 
             BusyText = "正在加载数据…";
             _data?.Dispose();
@@ -216,6 +220,13 @@ public class MainViewModel : ViewModelBase, IDisposable
             Log($"[init] 账号: {SelfUsername} · 数据目录: {AccountDir}");
             BootstrapNeeded = false;
             await LoadSessionsAsync();
+        }
+        catch (FileNotFoundException error)
+        {
+            Log($"[init] 初始化失败：{error.Message}");
+            Log("[init] 该文件在上一步解密时未能生成。常见原因：微信临时占用文件、密钥过期或微信刚刚更新。");
+            Log("[init] 请保持微信已登录，点击“提取密钥并启动”重试；若反复出现，请完全退出微信（含托盘）后再试一次。");
+            BootstrapNeeded = true;
         }
         catch (Exception error)
         {
