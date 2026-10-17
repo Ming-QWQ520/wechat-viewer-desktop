@@ -192,7 +192,7 @@ public sealed partial class MainWindow : Window
             message => ViewModel.ResolveFile(message.File?.Name));
     }
 
-    // ---------- appearance (透明窗口 / 液态玻璃 / 自定义背景) ----------
+    // ---------- appearance (透明窗口 / 液态玻璃 / 自定义背景 / 主题 / 字号) ----------
 
     private void InitAppearance()
     {
@@ -200,10 +200,18 @@ public sealed partial class MainWindow : Window
         _suppressAppearanceEvents = true;
         var modeIndex = _appearance.Mode switch { "mica" => 0, "image" => 2, _ => 1 };
         if (BackdropMode.Items.Count > modeIndex) BackdropMode.SelectedIndex = modeIndex;
+        ThemeCombo.SelectedIndex = _appearance.Theme switch { "light" => 1, "dark" => 2, _ => 0 };
+        BubbleColorCombo.SelectedIndex = _appearance.BubbleColor switch
+        {
+            "blue" => 1, "pink" => 2, "purple" => 3, "orange" => 4, _ => 0,
+        };
         BlurSlider.Value = _appearance.Blur;
         DimSlider.Value = _appearance.Dim;
         PanelSlider.Value = _appearance.PanelOpacity;
+        FontSizeSlider.Value = _appearance.FontSize;
+        FontSizeLabel.Text = $"消息字号：{_appearance.FontSize}";
         _suppressAppearanceEvents = false;
+        MessageInteractions.MessageFontScale = _appearance.FontSize / 14.0;
         AppearanceFlyout.Opening += (_, _) => SyncAppearanceControls();
         _ = ApplyAppearanceAsync(refreshLists: false);
     }
@@ -213,9 +221,16 @@ public sealed partial class MainWindow : Window
         _suppressAppearanceEvents = true;
         var modeIndex = _appearance.Mode switch { "mica" => 0, "image" => 2, _ => 1 };
         if (BackdropMode.Items.Count > modeIndex) BackdropMode.SelectedIndex = modeIndex;
+        ThemeCombo.SelectedIndex = _appearance.Theme switch { "light" => 1, "dark" => 2, _ => 0 };
+        BubbleColorCombo.SelectedIndex = _appearance.BubbleColor switch
+        {
+            "blue" => 1, "pink" => 2, "purple" => 3, "orange" => 4, _ => 0,
+        };
         BlurSlider.Value = _appearance.Blur;
         DimSlider.Value = _appearance.Dim;
         PanelSlider.Value = _appearance.PanelOpacity;
+        FontSizeSlider.Value = _appearance.FontSize;
+        FontSizeLabel.Text = $"消息字号：{_appearance.FontSize}";
         _suppressAppearanceEvents = false;
         ImageOptions.Visibility = _appearance.Mode == "image" ? Visibility.Visible : Visibility.Collapsed;
         PickBackgroundText.Text = string.IsNullOrEmpty(_appearance.ImagePath)
@@ -225,33 +240,36 @@ public sealed partial class MainWindow : Window
 
     private async Task ApplyAppearanceAsync(bool refreshLists)
     {
+        MessageInteractions.MessageFontScale = _appearance.FontSize / 14.0;
         AppearanceService.Apply(_appearance, this);
-        // 背景图层
-        if (_appearance.Mode == "image" && !string.IsNullOrEmpty(_appearance.ImagePath))
+        // 背景图层：三种模式都由应用层渲染（mica/acrylic 取桌面壁纸，image 取自定义图）
+        try
         {
-            var dim = (byte)Math.Round(255 * _appearance.Dim / 100.0);
-            BackgroundDim.Background = new SolidColorBrush(new Windows.UI.Color { A = dim, R = 0, G = 0, B = 0 });
-            try
+            var backdropPath = await AppearanceService.BuildBackdropImageAsync(_appearance);
+            if (!string.IsNullOrEmpty(backdropPath) && File.Exists(backdropPath))
             {
-                var blurredPath = await AppearanceService.BuildBlurredImageAsync(_appearance.ImagePath, _appearance.Blur);
-                var bitmap = new BitmapImage(new Uri(blurredPath));
-                BackgroundImage.Source = bitmap;
+                BackgroundImage.Source = new BitmapImage(new Uri(backdropPath));
                 BackgroundLayer.Visibility = Visibility.Visible;
             }
-            catch
+            else
             {
                 BackgroundLayer.Visibility = Visibility.Collapsed;
+                BackgroundImage.Source = null;
             }
         }
-        else
+        catch
         {
             BackgroundLayer.Visibility = Visibility.Collapsed;
-            BackgroundImage.Source = null;
         }
+        // 自定义背景图模式：压暗遮罩（mica/acrylic 的压暗已烘进背景图，避免叠加过暗）
+        var dim = _appearance.Mode == "image" ? (byte)Math.Round(255 * _appearance.Dim / 100.0) : (byte)0;
+        BackgroundDim.Background = new SolidColorBrush(new Windows.UI.Color { A = dim, R = 0, G = 0, B = 0 });
+        // 液态玻璃高光层
+        GlassLayer.Visibility = _appearance.Mode == "acrylic" ? Visibility.Visible : Visibility.Collapsed;
 
         if (refreshLists)
         {
-            // 行渲染器在构建时读取画刷，切换外观后重建消息/会话行
+            // 行渲染器在构建时读取画刷/字号，切换外观后重建消息/会话行
             var selected = SessionList.SelectedItem;
             SessionList.ItemsSource = null;
             SessionList.ItemsSource = ViewModel.Sessions;
@@ -284,6 +302,31 @@ public sealed partial class MainWindow : Window
         _appearance.Mode = mode;
         AppearanceService.Save(_appearance);
         ImageOptions.Visibility = mode == "image" ? Visibility.Visible : Visibility.Collapsed;
+        _ = ApplyAppearanceAsync(refreshLists: true);
+    }
+
+    private void OnThemeChanged(object sender, SelectionChangedEventArgs args)
+    {
+        if (_suppressAppearanceEvents) return;
+        _appearance.Theme = (ThemeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "auto";
+        AppearanceService.Save(_appearance);
+        _ = ApplyAppearanceAsync(refreshLists: true);
+    }
+
+    private void OnBubbleColorChanged(object sender, SelectionChangedEventArgs args)
+    {
+        if (_suppressAppearanceEvents) return;
+        _appearance.BubbleColor = (BubbleColorCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "green";
+        AppearanceService.Save(_appearance);
+        _ = ApplyAppearanceAsync(refreshLists: true);
+    }
+
+    private void OnFontSizeChanged(object sender, RangeBaseValueChangedEventArgs args)
+    {
+        if (_suppressAppearanceEvents || _appearance == null) return;
+        _appearance.FontSize = (int)FontSizeSlider.Value;
+        FontSizeLabel.Text = $"消息字号：{_appearance.FontSize}";
+        AppearanceService.Save(_appearance);
         _ = ApplyAppearanceAsync(refreshLists: true);
     }
 
@@ -437,20 +480,31 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 将目标消息滚动到视口垂直居中（微信定位样式）；
-    /// ScrollIntoView 只有 Leading/Default，改用 ChangeView 计算居中偏移。
+    /// 将目标消息滚动到视口垂直居中（微信定位样式）。
+    /// 两个关键点：
+    ///   1) ListView 虚拟化下目标容器可能尚未 realize（ContainerFromItem 返回 null），
+    ///      必须先 ScrollIntoView 触发 realize，否则什么都不会发生；
+    ///   2) 计算居中偏移时坐标系要一致：TransformToVisual(MessageList) 得到的是
+    ///      "相对视口"的位置，再加当前 VerticalOffset 换算成内容绝对偏移。
+    ///      旧实现把"相对内容原点"的坐标又加了 VerticalOffset，滚动越深偏差越大。
     /// </summary>
     private void ScrollMessageToCenter(MessageViewModel target)
     {
-        if (_messagesScroll == null) return;
+        if (MessageList == null || target == null) return;
         try
         {
+            // 1) 先让目标容器 realize（虚拟化下直接取容器可能为 null）
+            MessageList.ScrollIntoView(target, ScrollIntoViewAlignment.Leading);
+            MessageList.UpdateLayout();
+            _messagesScroll ??= FindScrollViewer(MessageList);
+            if (_messagesScroll == null) return;
             if (MessageList.ContainerFromItem(target) is not FrameworkElement container) return;
-            container.UpdateLayout();
-            var origin = container.TransformToVisual(_messagesScroll.Content as UIElement ?? MessageList)
+
+            // 2) 相对视口的位置 → 换算为内容绝对偏移，把目标滚到视口垂直居中
+            var rel = container.TransformToVisual(MessageList)
                 .TransformPoint(new Windows.Foundation.Point(0, 0));
-            var itemTop = origin.Y + _messagesScroll.VerticalOffset;
-            var centered = itemTop - (_messagesScroll.ViewportHeight / 2) + (container.ActualHeight / 2);
+            var centered = _messagesScroll.VerticalOffset + rel.Y
+                + (container.ActualHeight / 2) - (_messagesScroll.ViewportHeight / 2);
             _messagesScroll.ChangeView(null, Math.Max(0, centered), null, true);
         }
         catch

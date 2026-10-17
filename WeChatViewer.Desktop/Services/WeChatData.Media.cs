@@ -520,6 +520,39 @@ public sealed partial class WeChatData
             || host.EndsWith(".qlogo.cn") || host == "qlogo.cn";
     }
 
+    // 失败原因日志限流（静态，避免补全表情包时刷屏）
+    private static readonly object StickerLogGate = new();
+    private static readonly HashSet<string> StickerLogSeen = new();
+
+    private static void LogStickerOnce(string key, string reason)
+    {
+        lock (StickerLogGate)
+        {
+            if (StickerLogSeen.Count > 80 || !StickerLogSeen.Add(key + "|" + reason)) return;
+        }
+        StartupLogger.Log($"[stickers] {key[..Math.Min(8, key.Length)]}… {reason}");
+    }
+
+    private static bool IsWxgf(byte[] b)
+        => b != null && b.Length >= 4 && b[0] == 0x77 && b[1] == 0x78 && b[2] == 0x67 && b[3] == 0x66;
+
+    /// <summary>
+    /// 表情缓存/下载键派生：优先消息 md5，其次缩略图 md5（本地缓存常按 thumb 键），
+    /// 最后用 cdnurl/encrypturl/serverId 摘要兜底——保证无有效 md5 的表情仍有缓存键可下载落盘。
+    /// </summary>
+    internal static string StickerCacheKey(StickerPayload payload, string serverId)
+    {
+        if (payload == null) return TextUtils.Md5Hex(serverId ?? "");
+        foreach (var key in new[] { payload.Md5, payload.ThumbMd5 })
+        {
+            if (!string.IsNullOrEmpty(key) && Regex.IsMatch(key, "^[0-9a-fA-F]{32}$"))
+            {
+                return key.ToLowerInvariant();
+            }
+        }
+        return TextUtils.Md5Hex(payload.CdnUrl ?? payload.EncryptUrl ?? serverId ?? "");
+    }
+
     /// <summary>
     /// Download a sticker that WeChat never cached locally from the CDN URL recorded
     /// in the message. Only Tencent CDN hosts are accepted; MD5 must match.
@@ -536,9 +569,9 @@ public sealed partial class WeChatData
             return cached;
         }
         var cleaned = TextUtils.HtmlUnescape(url);
-        if (!Uri.TryCreate(cleaned, UriKind.Absolute, out var target)) return null;
-        if (target.Scheme != Uri.UriSchemeHttp && target.Scheme != Uri.UriSchemeHttps) return null;
-        if (!IsStickerCdnHost(target.Host)) return null;
+        if (!Uri.TryCreate(cleaned, UriKind.Absolute, out var target)) { LogStickerOnce(key, "cdnurl 无法解析"); return null; }
+        if (target.Scheme != Uri.UriSchemeHttp && target.Scheme != Uri.UriSchemeHttps) { LogStickerOnce(key, "cdnurl 非 http(s)"); return null; }
+        if (!IsStickerCdnHost(target.Host)) { LogStickerOnce(key, $"cdnurl 域名不在白名单: {target.Host}"); return null; }
         try
         {
             using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -546,16 +579,36 @@ public sealed partial class WeChatData
             request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
             request.Headers.Referrer = new Uri("https://wx.qq.com/");
             using var response = await Http.Value.SendAsync(request, cts.Token);
-            if (!response.IsSuccessStatusCode) return null;
+            if (!response.IsSuccessStatusCode)
+            {
+                LogStickerOnce(key, $"CDN 下载失败 http {(int)response.StatusCode}（链接可能已过期）");
+                return null;
+            }
             if (!string.IsNullOrEmpty(response.Headers.Location?.Host)
                 && !IsStickerCdnHost(response.Headers.Location.Host))
             {
+                LogStickerOnce(key, "重定向到非腾讯 CDN，已拦截");
                 return null;
             }
             var buffer = await response.Content.ReadAsByteArrayAsync(cts.Token);
-            if (buffer.Length == 0 || buffer.Length > 10 * 1024 * 1024) return null;
+            if (buffer.Length == 0 || buffer.Length > 10 * 1024 * 1024)
+            {
+                LogStickerOnce(key, $"CDN 内容大小异常: {buffer.Length}B");
+                return null;
+            }
+            if (IsWxgf(buffer))
+            {
+                // wxgf 是微信私有容器（内封 HEVC 流），需要 ffmpeg 才能转码；
+                // 退而求其次：若本地缩略图存在，ReadSticker 已按 thumbMd5 命中
+                LogStickerOnce(key, "wxgf 动态表情容器暂不支持解码（需 ffmpeg），显示占位");
+                return null;
+            }
             var decoded = DecodeDownloadedSticker(buffer, key, aesKeyHex);
-            if (decoded == null) return null;
+            if (decoded == null)
+            {
+                LogStickerOnce(key, "CDN 内容既不是可显示图片，也无法用 aeskey 解密");
+                return null;
+            }
             var ext = decoded[0] switch
             {
                 0x89 => "png",
@@ -581,23 +634,40 @@ public sealed partial class WeChatData
         }
     }
 
-    /// <summary>明文直接通过 MD5 校验；否则尝试 aeskey 解密变体，再验 MD5。</summary>
+    /// <summary>
+    /// 明文优先；MD5 不匹配但内容是可显示图片时也接受（腾讯 CDN 如 giffix.gtimg.cn 会
+    /// 返回转码后的图，MD5 与消息记录必然不一致，严格校验会导致大量表情被丢弃）；
+    /// 否则尝试 aeskey 解密变体。
+    /// </summary>
     private static byte[] DecodeDownloadedSticker(byte[] buffer, string md5Hex, string aesKeyHex)
     {
         if (TextUtils.Md5Hex(buffer) == md5Hex && ImageDecoder.IsDisplayableImage(buffer)) return buffer;
+        if (ImageDecoder.IsDisplayableImage(buffer))
+        {
+            LogStickerOnce(md5Hex, "CDN 内容 MD5 与记录不符（多为转码结果），已按可显示图片接受");
+            return buffer;
+        }
         if (string.IsNullOrEmpty(aesKeyHex) || aesKeyHex.Length != 32) return null;
         if (!System.Text.RegularExpressions.Regex.IsMatch(aesKeyHex, "^[0-9a-fA-F]{32}$")) return null;
         var keyBytes = Convert.FromHexString(aesKeyHex);
         // 方案 1：key = IV（与本地表情文件一致的方案）
         var plain = ImageDecoder.DecodeEmoticonFile(buffer, keyBytes);
-        if (plain != null && TextUtils.Md5Hex(plain) == md5Hex) return plain;
+        if (plain != null && (TextUtils.Md5Hex(plain) == md5Hex || ImageDecoder.IsDisplayableImage(plain)))
+        {
+            LogStickerOnce(md5Hex, "CDN 密文用 aeskey（key=IV）解密成功");
+            return plain;
+        }
         // 方案 2：IV 取密文首 16 字节
         if (buffer.Length > 16)
         {
             var rest = new byte[buffer.Length - 16];
             Array.Copy(buffer, 16, rest, 0, rest.Length);
             var ivPrefixed = ImageDecoder.AesCbcDecrypt(rest, keyBytes, buffer.AsSpan(0, 16).ToArray());
-            if (ivPrefixed != null && TextUtils.Md5Hex(ivPrefixed) == md5Hex) return ivPrefixed;
+            if (ivPrefixed != null && (TextUtils.Md5Hex(ivPrefixed) == md5Hex || ImageDecoder.IsDisplayableImage(ivPrefixed)))
+            {
+                LogStickerOnce(md5Hex, "CDN 密文用 aeskey（首 16 字节 IV）解密成功");
+                return ivPrefixed;
+            }
         }
         return null;
     }

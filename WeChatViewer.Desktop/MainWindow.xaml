@@ -18,11 +18,22 @@
       <RowDefinition Height="*"/>
     </Grid.RowDefinitions>
 
-    <!-- ======== custom fullscreen background (自定义背景图模式) ======== -->
+    <!-- ======== custom fullscreen background (背景图层：mica/acrylic 取桌面壁纸，image 取自定义图) ======== -->
     <Grid x:Name="BackgroundLayer" Grid.RowSpan="2" Visibility="Collapsed">
       <Image x:Name="BackgroundImage" Stretch="UniformToFill"/>
       <Border x:Name="BackgroundDim" Background="#00000000"/>
     </Grid>
+
+    <!-- ======== liquid-glass highlight (液态玻璃模式顶部高光，不拦截鼠标) ======== -->
+    <Border x:Name="GlassLayer" Grid.RowSpan="2" Visibility="Collapsed" IsHitTestVisible="False">
+      <Border.Background>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+          <GradientStop Color="#26FFFFFF" Offset="0"/>
+          <GradientStop Color="#0DFFFFFF" Offset="0.35"/>
+          <GradientStop Color="#00FFFFFF" Offset="0.7"/>
+        </LinearGradientBrush>
+      </Border.Background>
+    </Border>
 
     <!-- ======== custom title bar ======== -->
     <Grid x:Name="AppTitleBar" Height="44">
@@ -57,15 +68,22 @@
             <TextBox x:Name="SessionSearchBox" PlaceholderText="搜索会话 / 联系人"
                      TextChanged="OnSessionSearchChanged"/>
             <Button x:Name="AppearanceButton" Grid.Column="1" Width="36" Height="36" Padding="0"
-                    VerticalAlignment="Center" ToolTipService.ToolTip="外观设置（背景 / 液态玻璃）">
+                    VerticalAlignment="Center" ToolTipService.ToolTip="外观设置（主题 / 背景 / 液态玻璃 / 字号）">
               <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE713;" FontSize="14"/>
               <Button.Flyout>
                 <Flyout x:Name="AppearanceFlyout" Placement="Bottom">
                   <StackPanel Width="300" Spacing="12" Margin="0,4">
                     <TextBlock Text="外观设置" FontSize="15" FontWeight="SemiBold"/>
+                    <TextBlock Text="主题" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
+                    <ComboBox x:Name="ThemeCombo" HorizontalAlignment="Stretch" SelectionChanged="OnThemeChanged">
+                      <ComboBoxItem Content="跟随系统" Tag="auto"/>
+                      <ComboBoxItem Content="浅色" Tag="light"/>
+                      <ComboBoxItem Content="深色" Tag="dark"/>
+                    </ComboBox>
+                    <TextBlock Text="背景模式" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
                     <RadioButtons x:Name="BackdropMode" SelectionChanged="OnBackdropModeChanged">
-                      <RadioButton Content="Mica 质感（跟随系统）" Tag="mica"/>
-                      <RadioButton Content="液态玻璃（亚克力透明）" Tag="acrylic"/>
+                      <RadioButton Content="Mica 质感（壁纸模糊 + 压暗）" Tag="mica"/>
+                      <RadioButton Content="液态玻璃（壁纸模糊 + 白雾通透）" Tag="acrylic"/>
                       <RadioButton Content="自定义全屏背景图" Tag="image"/>
                     </RadioButtons>
                     <StackPanel x:Name="ImageOptions" Spacing="10" Visibility="Collapsed">
@@ -78,13 +96,24 @@
                       <TextBlock Text="模糊强度" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
                       <Slider x:Name="BlurSlider" Minimum="0" Maximum="4" StepFrequency="1"
                               ValueChanged="OnBackdropSliderChanged"/>
-                      <TextBlock Text="画面压暗" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
+                      <TextBlock Text="画面压暗（少量遮罩）" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
                       <Slider x:Name="DimSlider" Minimum="0" Maximum="70" StepFrequency="5"
                               ValueChanged="OnBackdropSliderChanged"/>
                     </StackPanel>
                     <TextBlock Text="面板透明度（越小越通透）" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
-                    <Slider x:Name="PanelSlider" Minimum="50" Maximum="100" StepFrequency="5"
+                    <Slider x:Name="PanelSlider" Minimum="30" Maximum="100" StepFrequency="5"
                             ValueChanged="OnBackdropSliderChanged"/>
+                    <TextBlock Text="气泡颜色（自己的消息）" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
+                    <ComboBox x:Name="BubbleColorCombo" HorizontalAlignment="Stretch" SelectionChanged="OnBubbleColorChanged">
+                      <ComboBoxItem Content="微信绿" Tag="green"/>
+                      <ComboBoxItem Content="晴空蓝" Tag="blue"/>
+                      <ComboBoxItem Content="蜜桃粉" Tag="pink"/>
+                      <ComboBoxItem Content="薰衣紫" Tag="purple"/>
+                      <ComboBoxItem Content="暖阳橙" Tag="orange"/>
+                    </ComboBox>
+                    <TextBlock x:Name="FontSizeLabel" Text="消息字号：14" FontSize="12" Foreground="{ThemeResource WxMutedBrush}"/>
+                    <Slider x:Name="FontSizeSlider" Minimum="12" Maximum="20" StepFrequency="1"
+                            ValueChanged="OnFontSizeChanged"/>
                     <Button Content="恢复默认" HorizontalAlignment="Right" Click="OnResetAppearance"/>
                   </StackPanel>
                 </Flyout>

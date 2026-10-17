@@ -27,7 +27,8 @@ public sealed partial class WeChatData : IDisposable
     public string AccountDir { get; }
     private readonly string _emoticonDir;
     private readonly string _msgDir;
-    public string SelfUsername { get; }
+    public string SelfUsername { get; private set; }
+    private bool _selfResolved;
 
     private readonly Dictionary<string, SqliteConnection> _dbs = new();
     private readonly Dictionary<string, ContactInfo> _contacts = new();
@@ -62,6 +63,10 @@ public sealed partial class WeChatData : IDisposable
         public string Shard { get; }
         public SqliteConnection Db { get; }
         public string Table { get; }
+
+        /// <summary>消息表是否带 is_sender 列（1=自己发送），用于直接判定消息方向。</summary>
+        public bool HasIsSender { get; set; }
+
         public ShardRef(string shard, SqliteConnection db, string table) { Shard = shard; Db = db; Table = table; }
     }
 
@@ -178,11 +183,40 @@ public sealed partial class WeChatData : IDisposable
         return sb.ToString();
     }
 
-    private string DetectSelf()
+    /// <summary>
+    /// 自我账号候选列表：账户目录形如 <wxid>_<4位hex>。wxid 本身可能含下划线，
+    /// 因此除首选正则外再提供“剥掉末尾 _<hex4>”与“目录原名”两个候选，
+    /// 并在加载 Name2Id 后用真实数据校验（ResolveSelfFromNames）。
+    /// </summary>
+    public List<string> SelfCandidates()
     {
         var baseName = Path.GetFileName(AccountDir);
+        var list = new List<string>();
         var m = System.Text.RegularExpressions.Regex.Match(baseName, @"^(wxid_[A-Za-z0-9]+)_[0-9a-f]{4}$");
-        return m.Success ? m.Groups[1].Value : baseName;
+        if (m.Success) list.Add(m.Groups[1].Value);
+        var m2 = System.Text.RegularExpressions.Regex.Match(baseName, @"^(.+)_([0-9a-f]{4})$");
+        if (m2.Success && m2.Groups[1].Value.Length > 0) list.Add(m2.Groups[1].Value);
+        list.Add(baseName);
+        return list.Distinct().ToList();
+    }
+
+    private string DetectSelf() => SelfCandidates()[0];
+
+    /// <summary>用 Name2Id 的真实映射校验自我识别；识别错误会导致自己发的消息全部左对齐。</summary>
+    internal void ResolveSelfFromNames(Dictionary<long, string> map)
+    {
+        if (_selfResolved || map.Count == 0) return;
+        _selfResolved = true;
+        if (map.ContainsValue(SelfUsername)) return;
+        foreach (var candidate in SelfCandidates())
+        {
+            if (map.ContainsValue(candidate))
+            {
+                StartupLogger.Log($"[init] 自我识别修正: {SelfUsername} → {candidate}（依据 Name2Id 映射）");
+                SelfUsername = candidate;
+                return;
+            }
+        }
     }
 
     private void LoadContacts()

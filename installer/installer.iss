@@ -2,7 +2,7 @@
 ; Built in CI: ISCC /DAppVersion=<from csproj> /DPublishDir=... installer\installer.iss
 
 #ifndef AppVersion
-#define AppVersion "2.4.0"
+#define AppVersion "2.5.0"
 #endif
 
 #ifndef PublishDir

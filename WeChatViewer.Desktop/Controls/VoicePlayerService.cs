@@ -17,6 +17,9 @@ public static class MessageInteractions
     /// <summary>username → avatar ImageSource (set by MainWindow, backed by WeChatData).</summary>
     public static Func<string, Task<object>> AvatarResolver;
 
+    /// <summary>消息字号缩放系数（外观设置中的字号 / 基准 14），渲染气泡文本时应用。</summary>
+    public static double MessageFontScale = 1.0;
+
     /// <summary>Quote block clicked → jump to the original message.</summary>
     public static event Action<MessageViewModel> QuoteRequested;
 

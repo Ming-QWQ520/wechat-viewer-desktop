@@ -653,9 +653,21 @@ public class MainViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private readonly object _stickerLogGate = new();
+    private readonly HashSet<string> _stickerFailLogged = new();
+
+    private void LogStickerFail(string key, string detail)
+    {
+        lock (_stickerLogGate)
+        {
+            if (!_stickerFailLogged.Add(key + "|" + detail)) return;
+        }
+        Log($"[sticker] {key[..Math.Min(8, key.Length)]}… 表情显示失败：{detail}");
+    }
+
     /// <summary>
     /// 表情解析链：主 md5 → 缩略图 md5（本地缓存常按 thumb 键存储）→ cdnurl → encrypturl。
-    /// 任一环成功即返回，失败逐级回退。
+    /// 任一环成功即返回，失败逐级回退；无有效 md5 时用缩略图 md5 或 url 摘要作缓存键。
     /// </summary>
     public byte[] ResolveStickerBytes(Message message)
     {
@@ -673,17 +685,25 @@ public class MainViewModel : ViewModelBase, IDisposable
                 if (_data.ReadSticker(keys[0]) is { } primary) return primary.Buffer;
                 if (keys.Count > 1 && _data.ReadSticker(keys[1]) is { } thumb) return thumb.Buffer;
             }
+            // 无有效 md5 时仍然尝试 CDN 下载：用缩略图 md5 或 url 摘要作缓存键
+            var cacheKey = WeChatData.StickerCacheKey(payload, message.ServerId);
             var aesKey = payload.AesKey is { Length: 32 } ? payload.AesKey : null;
-            if (!string.IsNullOrEmpty(payload.CdnUrl) && keys.Count > 0)
+            var cdnBlocked = false;
+            if (!string.IsNullOrEmpty(payload.CdnUrl))
             {
-                var downloaded = _data.DownloadStickerAsync(keys[0], payload.CdnUrl, aesKey).GetAwaiter().GetResult();
+                var downloaded = _data.DownloadStickerAsync(cacheKey, payload.CdnUrl, aesKey).GetAwaiter().GetResult();
                 if (downloaded != null) return downloaded.Buffer;
+                cdnBlocked = true;
             }
-            if (!string.IsNullOrEmpty(payload.EncryptUrl) && keys.Count > 0)
+            if (!string.IsNullOrEmpty(payload.EncryptUrl))
             {
-                var encrypted = _data.DownloadStickerAsync(keys[0], payload.EncryptUrl, aesKey).GetAwaiter().GetResult();
+                var encrypted = _data.DownloadStickerAsync(cacheKey, payload.EncryptUrl, aesKey).GetAwaiter().GetResult();
                 if (encrypted != null) return encrypted.Buffer;
+                cdnBlocked = true;
             }
+            LogStickerFail(cacheKey, cdnBlocked
+                ? "本地缓存未命中且 CDN 下载不可用（链接可能已过期，详见 logs）"
+                : "无本地缓存且消息未记录可用的表情下载地址");
             return null;
         }
         catch

@@ -26,7 +26,12 @@ public sealed partial class WeChatData
             if (!File.Exists(Path.Combine(_decDir, shard))) continue;
             var db = Db(shard);
             var row = Query(db, "select name from sqlite_master where type = 'table' and name = ?", table);
-            if (row.Count > 0) found.Add(new ShardRef(shard, db, table));
+            if (row.Count > 0)
+            {
+                var shardRef = new ShardRef(shard, db, table);
+                shardRef.HasIsSender = TableHasIsSender(shardRef);
+                found.Add(shardRef);
+            }
         }
         _msgLocator[username] = found;
         return found;
@@ -43,13 +48,41 @@ public sealed partial class WeChatData
                 map[ToLong(row["id"])] = row["user_name"] as string;
             }
             _name2id[shard] = map;
+            // Name2Id 是验证“自己是谁”的真实数据源，识别错误会导致自己发的消息不右对齐
+            ResolveSelfFromNames(map);
         }
         return map;
     }
 
-    private const string MessageColumns =
+    /// <summary>
+    /// 消息列清单。微信 4.x 部分版本的 message 表带 is_sender 列（1=自己发送），
+    /// 可直接判断消息方向；老 schema 无此列时回退到 real_sender_id == SelfUsername。
+    /// </summary>
+    private const string MessageColumnsBase =
         "local_id, local_type, sort_seq, real_sender_id, create_time, message_content, " +
         "compress_content, source, packed_info_data, CAST(server_id AS TEXT) AS server_id_text";
+
+    private const string MessageColumnsWithSender =
+        "local_id, local_type, sort_seq, real_sender_id, create_time, message_content, " +
+        "compress_content, source, packed_info_data, is_sender, CAST(server_id AS TEXT) AS server_id_text";
+
+    private static string MessageColumns(bool withIsSender)
+        => withIsSender ? MessageColumnsWithSender : MessageColumnsBase;
+
+    /// <summary>探测某 shard 的消息表是否带 is_sender 列（每个 shard 表结构一致，结果缓存在 ShardRef 上）。</summary>
+    private bool TableHasIsSender(ShardRef shard)
+    {
+        try
+        {
+            var row = Query(shard.Db,
+                $"select count(*) as n from pragma_table_info('{shard.Table}') where name = 'is_sender'");
+            return row.Count > 0 && ToLong(row[0]["n"]) > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     public MessagePage Messages(string username, long? before = null, int limit = 60, MessageCursor cursor = null)
     {
@@ -63,11 +96,12 @@ public sealed partial class WeChatData
         foreach (var shardRef in shards)
         {
             long[] position = cursors.TryGetValue(shardRef.Shard, out var p) && p is { Length: 2 } ? p : null;
+            var columns = MessageColumns(shardRef.HasIsSender);
             List<Dictionary<string, object>> rows;
             if (position != null)
             {
                 rows = Query(shardRef.Db,
-                    $"select {MessageColumns} from \"{shardRef.Table}\" " +
+                    $"select {columns} from \"{shardRef.Table}\" " +
                     "where (sort_seq < ? or (sort_seq = ? and local_id < ?)) " +
                     "order by sort_seq desc, local_id desc limit ?",
                     position[0], position[0], position[1], limit + 1);
@@ -75,14 +109,14 @@ public sealed partial class WeChatData
             else if (before != null)
             {
                 rows = Query(shardRef.Db,
-                    $"select {MessageColumns} from \"{shardRef.Table}\" " +
+                    $"select {columns} from \"{shardRef.Table}\" " +
                     "where sort_seq < ? order by sort_seq desc, local_id desc limit ?",
                     before.Value, limit + 1);
             }
             else
             {
                 rows = Query(shardRef.Db,
-                    $"select {MessageColumns} from \"{shardRef.Table}\" " +
+                    $"select {columns} from \"{shardRef.Table}\" " +
                     "order by sort_seq desc, local_id desc limit ?", limit + 1);
             }
             if (rows.Count > limit) shardHasMore = true;
@@ -263,6 +297,20 @@ public sealed partial class WeChatData
             Text = "",
             RawType = ToLong(row["local_type"]),
         };
+
+        // is_sender 列（1=自己）优先判定；无此列或语义未知时回退到 senderUsername 比较。
+        // 若 is_sender 判定为自己但 Name2Id 未映射到自己的 wxid，则纠正发送者显示为“我”，
+        // 避免自己的消息显示对方名字且左对齐。
+        bool selfByColumn = row.TryGetValue("is_sender", out var isSenderObj)
+            && (ToLong(isSenderObj) == 1);
+        if (selfByColumn && senderUsername != SelfUsername)
+        {
+            senderUsername = SelfUsername;
+            senderDisplay = "我";
+            message.SenderUsername = senderUsername;
+            message.SenderName = senderDisplay;
+            message.IsSelf = true;
+        }
 
         switch (baseType)
         {

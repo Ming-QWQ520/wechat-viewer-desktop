@@ -28,6 +28,10 @@ public sealed partial class MessageRow : UserControl
     /// <summary>Set by MainWindow: whether the current chat is a group chat.</summary>
     public static bool CurrentChatIsGroup;
 
+    /// <summary>按外观设置的字号缩放消息文本（基准值 × 缩放系数）。</summary>
+    private static double Fs(double baseSize)
+        => Math.Round(baseSize * Math.Clamp(MessageInteractions.MessageFontScale, 0.7, 1.6), 1);
+
     public MessageRow()
     {
         InitializeComponent();
@@ -246,7 +250,7 @@ public sealed partial class MessageRow : UserControl
             wrap.Children.Add(new TextBlock
             {
                 Text = message.SenderName,
-                FontSize = 12,
+                FontSize = Fs(12),
                 Margin = new Thickness(2, 0, 0, 4),
                 Foreground = Application.Current.Resources["WxNameBrush"] as Brush,
             });
@@ -263,7 +267,7 @@ public sealed partial class MessageRow : UserControl
         wrap.Children.Add(new TextBlock
         {
             Text = MessageViewModel.Clock(message.Time),
-            FontSize = 10,
+            FontSize = Fs(10),
             Margin = new Thickness(2, 3, 2, 0),
             Foreground = Application.Current.Resources["WxTimeBrush"] as Brush,
             HorizontalAlignment = message.IsSelf ? HorizontalAlignment.Right : HorizontalAlignment.Left,
@@ -326,7 +330,7 @@ public sealed partial class MessageRow : UserControl
                 return new TextBlock
                 {
                     Text = $"[位置] {message.Location?.Label ?? ""}{(message.Location?.PoiName is { Length: > 0 } p ? " · " + p : "")}",
-                    FontSize = 14,
+                    FontSize = Fs(14),
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = Application.Current.Resources["WxTextBrush"] as Brush,
                 };
@@ -341,8 +345,8 @@ public sealed partial class MessageRow : UserControl
     {
         var block = new TextBlock
         {
-            FontSize = 14,
-            LineHeight = 21,
+            FontSize = Fs(14),
+            LineHeight = Fs(21),
             TextWrapping = TextWrapping.Wrap,
             IsTextSelectionEnabled = true,
             Foreground = Application.Current.Resources["WxTextBrush"] as Brush,
@@ -384,7 +388,7 @@ public sealed partial class MessageRow : UserControl
                 {
                     Text = value,
                     FontFamily = new FontFamily("Segoe UI Emoji"),
-                    FontSize = 15,
+                    FontSize = Fs(15),
                 });
             }
             else if (value.Length > 0)
@@ -411,7 +415,7 @@ public sealed partial class MessageRow : UserControl
         var placeholder = new TextBlock
         {
             Text = "图片加载中…",
-            FontSize = 13,
+            FontSize = Fs(13),
             Foreground = Application.Current.Resources["WxMutedBrush"] as Brush,
             Margin = new Thickness(4, 2, 4, 2),
         };
@@ -504,7 +508,7 @@ public sealed partial class MessageRow : UserControl
         var duration = new TextBlock
         {
             Text = $"{seconds}″",
-            FontSize = 13,
+            FontSize = Fs(13),
             Opacity = 0.8,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -640,7 +644,7 @@ public sealed partial class MessageRow : UserControl
         body.Children.Add(new TextBlock
         {
             Text = name,
-            FontSize = 14,
+            FontSize = Fs(14),
             FontWeight = Microsoft.UI.Text.FontWeights.Medium,
             TextWrapping = TextWrapping.Wrap,
             MaxWidth = 280,
@@ -648,7 +652,7 @@ public sealed partial class MessageRow : UserControl
         body.Children.Add(new TextBlock
         {
             Text = sub ?? "",
-            FontSize = 12,
+            FontSize = Fs(12),
             Foreground = Application.Current.Resources["WxMutedBrush"] as Brush,
             Margin = new Thickness(0, 2, 0, 0),
         });
@@ -674,7 +678,7 @@ public sealed partial class MessageRow : UserControl
         body.Children.Add(new TextBlock
         {
             Text = message.Link?.Title ?? "链接",
-            FontSize = 14,
+            FontSize = Fs(14),
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 4),
@@ -684,7 +688,7 @@ public sealed partial class MessageRow : UserControl
             body.Children.Add(new TextBlock
             {
                 Text = message.Link.Description,
-                FontSize = 12,
+                FontSize = Fs(12),
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Application.Current.Resources["WxNameBrush"] as Brush,
             });
@@ -694,7 +698,7 @@ public sealed partial class MessageRow : UserControl
             body.Children.Add(new TextBlock
             {
                 Text = message.Link.Url,
-                FontSize = 11,
+                FontSize = Fs(11),
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Application.Current.Resources["WxMutedBrush"] as Brush,
                 Margin = new Thickness(0, 4, 0, 0),
@@ -721,7 +725,7 @@ public sealed partial class MessageRow : UserControl
         var md5 = message.Sticker?.Md5 ?? message.Sticker?.ThumbMd5;
         if (string.IsNullOrEmpty(md5))
         {
-            return new TextBlock { Text = "[表情]", FontSize = 15 };
+            return new TextBlock { Text = "[表情]", FontSize = Fs(15) };
         }
         var image = new Image
         {
@@ -733,7 +737,7 @@ public sealed partial class MessageRow : UserControl
         var placeholder = new TextBlock
         {
             Text = "[表情]",
-            FontSize = 15,
+            FontSize = Fs(15),
         };
         var panel = new Grid { MinWidth = 60, MinHeight = 24 };
         panel.Children.Add(placeholder);
@@ -765,7 +769,7 @@ public sealed partial class MessageRow : UserControl
         panel.Children.Add(new TextBlock
         {
             Text = string.IsNullOrEmpty(quote?.Sender) ? "" : $"{quote.Sender}：",
-            FontSize = 12,
+            FontSize = Fs(12),
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = message.IsSelf
                 ? new SolidColorBrush(new Windows.UI.Color { A = 255, R = 242, G = 242, B = 242 })
@@ -774,7 +778,7 @@ public sealed partial class MessageRow : UserControl
         var textBlock = new TextBlock
         {
             Text = WeChatEmotes.Replace(quote?.Text ?? ""),
-            FontSize = 12,
+            FontSize = Fs(12),
             TextWrapping = TextWrapping.Wrap,
             MaxLines = 3,
             TextTrimming = TextTrimming.CharacterEllipsis,
