@@ -59,12 +59,12 @@
 
 ### 方式一：下载发行版（推荐）
 
-进入 [Releases](https://github.com/Ming-QWQ520/wechat-viewer-desktop/releases) 页面，下载 **v2.2.0** 中的文件，二选一：
+进入 [Releases](https://github.com/Ming-QWQ520/wechat-viewer-desktop/releases) 页面，下载 **v2.3.0** 中的文件，二选一：
 
 | 文件 | 说明 |
 | --- | --- |
-| `WeChatViewer-Setup-2.2.0-win-x64.exe` | **安装版（推荐）**：双击安装，自动创建开始菜单与桌面快捷方式，控制面板可卸载 |
-| `WeChatViewer.Desktop-2.2.0-win-x64.zip` | **绿色版**：解压后运行 `WeChatViewer.Desktop.exe`，无任何安装过程 |
+| `WeChatViewer-Setup-2.3.0-win-x64.exe` | **安装版（推荐）**：双击安装，自动创建开始菜单与桌面快捷方式，控制面板可卸载 |
+| `WeChatViewer.Desktop-2.3.0-win-x64.zip` | **绿色版**：解压后运行 `WeChatViewer.Desktop.exe`，无任何安装过程 |
 
 > 也可以在本仓库 **Actions → Build Windows Desktop → Artifacts** 下载每次构建的产物。
 
@@ -170,7 +170,7 @@ data\keys.json
 3. `dotnet publish`（自包含 + WindowsAppSDK 自包含，非打包部署）输出到 `bin\publish\win-x64`；
 4. **启动冒烟测试**：在 CI 中直接拉起 exe，30 秒后确认进程存活（能弹出窗口）才算成功，并输出应用启动日志；
 5. Inno Setup 打包安装版 `WeChatViewer-Setup-*.exe` + 绿色版 zip（剔除 pdb 与日志）；
-6. 上传 Artifact 并自动发布到 **Releases**（tag 版本号自动读取自 csproj，当前 `v2.2.0`）。
+6. 上传 Artifact 并自动发布到 **Releases**（tag 版本号自动读取自 csproj，当前 `v2.3.0`）。
 
 ---
 
@@ -205,7 +205,7 @@ data\keys.json
 按顺序排查：
 1. **确认是从压缩包解压后运行的**（不要在压缩软件的预览窗口里直接双击）；
 2. **解除文件锁定**：从浏览器下载的 zip 解压后文件可能被 Windows 标记为不信任。在解压目录打开 PowerShell 执行 `Get-ChildItem -Recurse | Unblock-File`，或右键 exe → 属性 → 勾选「解除锁定」；
-3. **查看启动日志**：程序会在 exe 旁的 `logs\` 目录（不可写时在 `%LOCALAPPDATA%\WeChatViewer.Desktop\logs\`）写入 `app-日期.log`；如果崩溃会弹出错误对话框并写明原因，把日志内容反馈给开发者即可；
+3. **查看启动日志**：程序会在 exe 旁的 `logs\` 目录（不可写时在 `%LOCALAPPDATA%\WeChatViewer.Desktop\logs\`）写入 `app-日期.log`；v2.3.0 起应用内日志面板的全部内容（解密、消息加载、导出等诊断行）也会同步写入该文件，崩溃或功能异常时把日志发给开发者即可；
 4. 若 SmartScreen 弹出「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」（应用未做代码签名）。
 
 **提取密钥失败？**  

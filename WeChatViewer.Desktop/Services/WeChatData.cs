@@ -123,8 +123,11 @@ public sealed partial class WeChatData : IDisposable
     {
         var rows = new List<Dictionary<string, object>>();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = sql;
-        foreach (var arg in args) cmd.Parameters.AddWithValue("?", arg ?? DBNull.Value);
+        cmd.CommandText = RewritePlaceholders(sql, args.Length);
+        for (int i = 0; i < args.Length; i++)
+        {
+            cmd.Parameters.AddWithValue($"$p{i}", args[i] ?? DBNull.Value);
+        }
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
@@ -136,6 +139,43 @@ public sealed partial class WeChatData : IDisposable
             rows.Add(row);
         }
         return rows;
+    }
+
+    /// <summary>
+    /// Microsoft.Data.Sqlite 无法绑定匿名 ? 占位符（AddWithValue("?") 会抛
+    /// “Must add values for the following parameters”），因此把 SQL 里的 ? 依序改写为
+    /// 命名参数 $p0..$pN。单引号字符串字面量内的 ? 原样保留。
+    /// </summary>
+    internal static string RewritePlaceholders(string sql, int count)
+    {
+        if (count == 0 || string.IsNullOrEmpty(sql) || sql.IndexOf('?') < 0) return sql;
+        var sb = new StringBuilder(sql.Length + count * 3);
+        int index = 0, i = 0;
+        while (i < sql.Length)
+        {
+            char ch = sql[i];
+            if (ch == '\'')
+            {
+                int end = sql.IndexOf('\'', i + 1);
+                if (end < 0)
+                {
+                    sb.Append(sql, i, sql.Length - i);
+                    break;
+                }
+                sb.Append(sql, i, end - i + 1); // 字符串字面量原样保留
+                i = end + 1;
+                continue;
+            }
+            if (ch == '?' && index < count)
+            {
+                sb.Append("$p").Append(index++);
+                i++;
+                continue;
+            }
+            sb.Append(ch);
+            i++;
+        }
+        return sb.ToString();
     }
 
     private string DetectSelf()

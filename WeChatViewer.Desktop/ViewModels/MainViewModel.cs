@@ -131,6 +131,7 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     public void Log(string line)
     {
+        StartupLogger.Log(line); // 同步写入 logs\app-*.log，便于用户反馈问题时提供完整日志
         _runOnUiThread(() =>
         {
             LogLines.Add(line);

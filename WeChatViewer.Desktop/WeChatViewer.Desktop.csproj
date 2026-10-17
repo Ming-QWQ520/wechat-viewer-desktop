@@ -26,7 +26,7 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
 
-    <Version>2.2.0</Version>
+    <Version>2.3.0</Version>
     <Authors>Ming-QWQ520</Authors>
     <Product>WeChatViewer Desktop</Product>
     <Description>微信聊天记录查看器（WinUI 3 桌面版）：本机只读查看与导出微信 4.x 聊天记录</Description>

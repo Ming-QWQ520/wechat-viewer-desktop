@@ -342,9 +342,11 @@ public sealed partial class WeChatData
                 result = new DecodedMedia { Buffer = buffer, ContentType = ImageDecoder.ImageContentType(buffer) };
             }
         }
-        catch
+        catch (Exception error) when (error is not FileNotFoundException)
         {
-            // head_image database absent or unreadable: fall back to initials
+            // head_image 数据库缺失属正常降级（显示彩色首字），不刷日志；
+            // 其他异常（损坏等）记录一次便于排查
+            StartupLogger.Log($"[avatar] {username} 头像查询失败: {error.Message}");
         }
         _avatarCache[username] = result;
         return result;
